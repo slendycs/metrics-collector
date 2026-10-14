@@ -1,0 +1,17 @@
+[project]
+name = "metrics-collector"
+version = "0.0.1"
+description = "Курсовая работа по Архитектуре программных систем, вариант №27 - Сервис сбора метрик"
+readme = "README.md"
+authors = [
+    { name = "Artem Shevchenko", email = "slendycs@yandex.ru" }
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+metrics-collector = "metrics_collector:main"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
