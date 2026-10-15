@@ -1,0 +1,56 @@
+---
+id: 84e2fe7e-faa9-40fe-a75c-99ae7507c8e8
+---
+flowchart LR
+    subgraph AG["Пул агентов (серверов)"]
+        direction TB
+        A1["<b>Агент</b><br/>Приоритет 1 (<i>Production</i>)"]
+        A2["<b>Агент</b><br/>Приоритет 2 (<i>Staging</i>)"]
+        A3["<b>Агент</b><br/>Приоритет 3 (<i>test</i>)"]
+    end
+
+    DP["<b>Сервис приёма</b> (ДП)<br/>- Получает метрики и ставит их в буфер<br/>- Отказывает в размещении новой заявки при переполнении буфера"]
+
+    BUF["<b>Буфер</b><br/>- Redis с ограниченным объёмом + Lua-скрипты<br/>- Отдаёт в первую очередь заявку от агента с высшим приоритетом, а в случае равных - последнюю поступившую<br/>- Размещает заявку на первое свободное место"]
+
+    DV["<b>Сервис управления воркерами</b> (ДВ)<br/>- Реагирует на обновление буфера и освобождение воркера<br/>- Выбирает воркеры по их приоритетам"]
+
+    subgraph WP["Пул воркеров"]
+        direction TB
+        W1["<b>Воркер</b><br/>Приоритет 1"]
+        W2["<b>Воркер</b><br/>Приоритет 2"]
+        W3["<b>Воркер</b><br/>Приоритет 3"]
+    end
+
+    PD["<b>PagerDuty</b><br/>(Алёртинг)"]
+    DB[("<b>База данных</b><br/>- Хранит время и значение метрик в это время, отдельно для каждого сервера")]
+    ST["<b>Сервис статистики</b><br/>- Сбор статистики с микросервисов<br/>- Построение диаграмм работы сервисов"]
+
+    AG -->|"Метрики + ID сервера"| DP
+    DP --> BUF
+    BUF -->|"Уведомление"| DV
+    DV <-->|"Запрос и получение заявки"| BUF
+    DV -->|"Заявка"| WP
+    WP -->|"Статус воркера"| DV
+    WP --> DB
+    WP -->|"Создание инцидента"| PD
+    DP -->|"Кол-во отказов + кол-во заявок"| ST
+    DV -->|"Кол-во взятых заявок + время отдачи задачи на воркер и её выполнения"| ST
+
+    classDef agent fill:#3a3a1e,stroke:#b8b84a,color:#eee
+    classDef dp fill:#3a2a1e,stroke:#e0822a,color:#eee
+    classDef buf fill:#1e3a24,stroke:#3fb950,color:#eee
+    classDef dv fill:#3a1e1e,stroke:#e0443a,color:#eee
+    classDef wrk fill:#1e3a3a,stroke:#3ab8b8,color:#eee
+    classDef db fill:#2a1e3a,stroke:#9a6ae0,color:#eee
+    classDef ext fill:#3a2a1e,stroke:#ff780a,stroke-dasharray:5 3,color:#eee
+    classDef stat fill:#1e1e4a,stroke:#4a4aff,color:#eee
+
+    class A1,A2,A3 agent
+    class DP dp
+    class BUF buf
+    class DV dv
+    class W1,W2,W3 wrk
+    class DB db
+    class PD ext
+    class ST stat
