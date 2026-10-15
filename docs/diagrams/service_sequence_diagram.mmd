@@ -1,70 +1,99 @@
 sequenceDiagram
     autonumber
-    participant AG as Агент (источник ИБ)
-    participant DP as ДП (Сервис приёма)
-    participant BUF as Буфер (Redis + Lua)
-    participant DV as ДВ (Сервис управления воркерами)
-    participant W as Воркер k (пул, приоритет = номер)
+    participant AG as Агент (PollingManager + Client)
+    participant DP as ДП (Сервис приёма, POST /collect)
+    participant BUF as Буфер (Redis, Lua-скрипты)
+    participant ST as Сервис статистики
+    participant DV as ДВ (WorkerManager)
+    participant W as Воркер k (Worker.run)
     participant DB as БД временных рядов
     participant PD as PagerDuty
-    participant ST as Сервис статистики
+    participant OP as Оператор (отчёт)
 
-    Note over AG: Триггер А: срабатывание таймера источника
-    AG-)DP: sendMetrics(serverType, metrics)
-    Note over AG,DP: Асинхронная отправка: агент не ждёт результата<br/>и не знает об отказе (ИБ не зависит от состояния системы)
-    DP->>DP: создать Заявку (serverType, seq, tвх)
-    DP-)ST: заявка сгенерирована (serverType)
-    DP->>BUF: put(заявка)
-    Note over BUF: Lua-скрипт атомарно<br/>Д1ОЗ3: найти первое свободное место от начала буфера
+    Note over DV,W: Старт
+    DV->>BUF: subscribe(callback = on_buffer_updated)
+    Note over DV: Запуск watchdog (раз в watchdog_interval)
+    W->>DV: POST /register(worker_id, url, priority)
+    DV->>DV: add_worker(worker), список упорядочен по priority (Д2П1)
+    DV-->>W: 200 OK
+    DV->>DV: _try_dispatch() (триггер: новый воркер)
 
-    alt Есть свободное место (HappyFlow или заявка встала в очередь)
-        BUF-->>DP: OK (slot)
-        BUF-)DV: bufferUpdated
-    else Буфер полон (отказ, Д1ОО5)
-        BUF-->>DP: FULL
-        Note over DP,BUF: Д1ОО5: отказ вновь пришедшей заявке<br/>Буфер и заявки в нём не меняются, выбивания нет<br/>Пакет потерян, следующий придёт по таймеру агента
-        DP-)ST: отказ (serverType)
+    Note over AG,ST: Триггер А: срабатывание таймера агента
+    loop Пока агент работает (ИБ, бесконечный источник)
+        AG->>AG: collect() → ServerStats (id, server_name, server_type, metrics)
+        AG->>DP: POST /collect(ServerStats)
+        DP->>DP: bid = Bid(source_name, source_type, seq, t_in = now, stats)
+        DP-)ST: POST /webhooks/new(bid)
+        DP->>BUF: put(bid)
+        Note over BUF: Lua put_bid (атомарно)<br/>Д1ОЗ3: первое свободное место от начала буфера, без сдвига очереди
+
+        alt Есть свободное место (HappyFlow или заявка встала в очередь)
+            BUF-->>DP: PutResult(accepted = True, slot)
+            BUF-)DV: PUBLISH buffer_updated (триггер Б1)
+        else Буфер полон (отказ, Д1ОО5)
+            BUF-->>DP: PutResult(accepted = False, slot = None)
+            Note over DP,BUF: Д1ОО5: отказ вновь пришедшей заявке<br/>Буфер и заявки в нём не меняются, выбивания нет<br/>Пакет потерян, следующий придёт по таймеру агента
+            DP-)ST: POST /webhooks/reject(bid)
+        end
+
+        DP-->>AG: 202 Accepted (всегда, агент об отказе не знает)
+        opt Сетевая ошибка при отправке
+            Note over AG,DP: Client бросает Exception, PollingManager пропускает такт
+        end
+        AG->>AG: sleep(uniform(timeout_min, timeout_max)) (ИЗ2)
     end
-    AG->>AG: запланировать следующий пакет через U(a,b)
 
-    Note over DV: Триггеры ДВ: Б1 = bufferUpdated, Б2 = workerFree
-    DV->>DV: tryDispatch()
+    Note over DV,W: Диспетчеризация ДВ<br/>Триггеры: Б1 buffer_updated, Б2 освобождение воркера, новый воркер, watchdog
+    DV->>DV: on_buffer_updated() / on_worker_free() / add_worker() / watchdog()
+    DV->>DV: _try_dispatch() под asyncio.Lock
 
-    alt Все воркеры заняты
-        Note over DV,BUF: Заявка остаётся в буфере, ДВ ждёт триггер Б2<br/>Воркеры не отказывают, они только заняты
-    else Есть свободный воркер
-        loop Пока в буфере есть заявки и есть свободный воркер
-            DV->>DV: выбрать воркера k (Д2П1): первый свободный, начиная с воркера 1
-            DV->>BUF: takeNext()
-            Note over BUF: Lua-скрипт атомарно<br/>Д2Б4: заявка источника с наивысшим приоритетом (по server_type),<br/>при равных последняя поступившая, одна заявка, место освобождается
-            BUF-->>DV: заявка
-            DV-)ST: заявка взята (tож = tтек - tвх)
-            DV->>DV: пометить воркера k занятым
-            DV-)W: process(заявка)
+    loop Пока есть свободный воркер и заявка в буфере
+        DV->>DV: _get_worker() (Д2П1: первый IDLE по возрастанию priority)
+        alt Свободных воркеров нет (воркеры не отказывают, они заняты)
+            Note over DV,BUF: Заявки остаются в буфере, цикл завершён<br/>Ждём триггер Б2 (освобождение воркера)
+        else Воркер k найден
+            DV->>BUF: pull()
+            Note over BUF: Lua take_next (атомарно)<br/>Д2Б4: одна заявка, приоритет по source_type, при равных последняя поступившая, место освобождается
+            alt Буфер пуст
+                BUF-->>DV: None
+                Note over DV: Цикл завершён, воркер k остаётся IDLE<br/>Ждём триггер Б1
+            else В буфере есть заявка
+                BUF-->>DV: bid
+                DV->>DV: worker.status = BUSY, worker.current_bid = bid
+                DV-)ST: POST /task-status(bid, taken, worker_id, t_ож, at)
+                DV->>W: POST /process(bid)
+                W-->>DV: 202 Accepted
+            end
         end
     end
 
-    Note over W: ПЗ1: tобсл распределено экспоненциально
-    W->>W: принять и десериализовать пакет
-    W->>DB: write(serverType, timestamp, metrics)
+    Note over W: Обработка заявки, ПЗ1: t_обсл распределено экспоненциально
+    W->>W: run(bid): принять и десериализовать пакет
+    W->>DB: write(bid)
     DB-->>W: OK
-    W->>W: проверить пороги и аномалии
+    W->>W: _is_anomaly(metrics)
     opt Обнаружена аномалия (длинный хвост ПЗ1)
-        W->>PD: createIncident(serverType, metric)
+        W->>PD: create_incident(bid, metric)
         PD-->>W: incidentId
     end
-    W-)DV: workerFree(k, tобсл)
-    DV->>DV: пометить воркера k свободным
-    DV-)ST: заявка обслужена (tобсл, tпреб)
 
-    Note over DV: Триггер Б2: воркер освободился<br/>Повторный запуск tryDispatch() — так заявка, ждавшая в буфере после отказов, уходит на обработку
-    DV->>DV: tryDispatch()
-    DV->>BUF: takeNext()
-    alt Буфер пуст
-        BUF-->>DV: пусто
-        Note over DV: Ждём следующий триггер
-    else В буфере есть заявка
-        BUF-->>DV: заявка (Д2Б4)
-        DV-)ST: заявка взята (tож)
-        DV-)W: process(заявка) на освободившегося воркера по Д2П1
-end
+    Note over W,DV: Триггер Б2: воркер освободился
+    W->>DV: POST /update-status(worker_id, task_id, IDLE, t_service)
+    DV->>DV: on_worker_free(): worker.status = IDLE, worker.current_bid = None
+    DV-->>W: 200 OK
+    DV-)ST: POST /task-status(bid, done, worker_id, t_обсл, at)
+    DV->>DV: _try_dispatch()
+    Note over DV,BUF: Тот же цикл, что в блоке диспетчеризации<br/>Заявка, ждавшая в буфере (в том числе после отказов), уходит на освободившегося воркера
+
+    Note over DV: Страховка от потери buffer_updated (Pub/Sub не гарантирует доставку)
+    loop Каждые watchdog_interval секунд
+        DV->>DV: watchdog() → _try_dispatch()
+    end
+
+    Note over ST,OP: Чтение результатов
+    OP->>ST: GET /summary
+    ST-->>OP: Summary (таблица 1 по источникам, таблица 2 по воркерам, total_time)
+    OP->>ST: GET /precision
+    ST-->>OP: PrecisionReport (required_n, generated, reached)
+    OP->>ST: GET /timeline
+    ST-->>OP: list of TimelineEvent (данные для временных диаграмм, ОД3)

@@ -1,0 +1,358 @@
+classDiagram
+    direction LR
+
+    namespace Agent {
+        class AgentConfig {
+            +str server_name
+            +str server_type
+            +int timeout_min
+            +int timeout_max
+            +str reception_service_url
+        }
+        class MetricsExporter {
+            -str _server_name
+            -str _server_type
+            -int _measuring_count
+            +get_cpu_load() float
+            +get_ram_load() float
+            +get_disk_read() int
+            +get_disk_write() int
+            +get_la() list~float~
+            +collect() ServerStats
+        }
+        class PollingManager {
+            -Client _client
+            -MetricsExporter _exporter
+            -int _timeout_min
+            -int _timeout_max
+            +polling() None
+        }
+        class Client {
+            -str _url
+            -str _POST_ENDPOINT
+            +send_metrics(metrics ServerStats) None
+        }
+    }
+
+    namespace Common {
+        class Metrics {
+            <<dataclass>>
+            +float cpu_load
+            +float ram_load
+            +int disk_read
+            +int disk_write
+            +list~float~ load_average
+            +datetime timestamp
+        }
+        class ServerStats {
+            <<dataclass>>
+            +int id
+            +str server_name
+            +str server_type
+            +Metrics metrics
+        }
+        class Bid {
+            <<dataclass>>
+            +str source_name
+            +str source_type
+            +int seq
+            +datetime t_in
+            +ServerStats stats
+        }
+        class PutResult {
+            <<dataclass>>
+            +bool accepted
+            +int slot
+        }
+    }
+
+    namespace ReceptionService {
+        class ReceptionApp {
+            <<FastAPI>>
+            +collect_metrics(metrics ServerStatsModel, buffer BufferClient, stats StatsClient) None
+        }
+        class ReceptionConfig {
+            +str redis_url
+            +str stats_server_url
+            +int buffer_capacity
+        }
+        class ReceptionBufferClient {
+            -str _redis_url
+            -str _PUT_SCRIPT
+            +put(bid Bid) PutResult
+            +get_free_space() int
+        }
+        class ReceptionStatsClient {
+            -str _stats_server_url
+            -str _NEW_WEBHOOK_ENDPOINT
+            -str _REJECTED_WEBHOOK_ENDPOINT
+            +notify(notification_type str, bid Bid) None
+        }
+    }
+
+    class BufferRedis {
+        <<Redis + Lua>>
+        put_bid : Д1ОЗ3 первое свободное место
+        take_next : Д2Б4 приоритет по source_type
+        buffer_updated : Pub/Sub канал
+    }
+
+    namespace WorkerDispatcher {
+        class DispatcherApp {
+            <<FastAPI>>
+            +register(worker_id int, url str, priority int, manager WorkerManager) None
+            +update_status(worker_id int, task_id int, status WorkerStatus, t_service float, manager WorkerManager) None
+        }
+        class DispatcherConfig {
+            +str redis_url
+            +str stats_server_url
+            +float watchdog_interval
+        }
+        class DispatcherBufferClient {
+            -str _redis_url
+            +pull() Bid
+            +subscribe(callback) None
+        }
+        class WorkerManager {
+            -list~WorkerClient~ _workers
+            -DispatcherBufferClient _buffer_client
+            -DispatcherStatsClient _stats_client
+            -Lock _lock
+            -float _watchdog_interval
+            +add_worker(worker WorkerClient) None
+            +on_buffer_updated() None
+            +on_worker_free(worker_id int, t_service float) None
+            +watchdog() None
+            -_try_dispatch() None
+            -_get_worker() WorkerClient
+        }
+        class WorkerClient {
+            +int id
+            +int priority
+            +WorkerStatus status
+            +Bid current_bid
+            -str _url
+            +push(bid Bid) None
+        }
+        class WorkerStatus {
+            <<enumeration>>
+            IDLE
+            BUSY
+            UNAVAILABLE
+        }
+        class DispatcherStatsClient {
+            -str _stats_server_url
+            -str _TASK_STATUS_ENDPOINT
+            +send_task_status(bid Bid, status str, worker_id int, duration float, at datetime) None
+        }
+    }
+
+    namespace WorkerService {
+        class WorkerApp {
+            <<FastAPI>>
+            +process(bid Bid) None
+        }
+        class Worker {
+            -int _id
+            -str _dispatcher_url
+            -TimeSeriesDbClient _db
+            -AlertClient _alerts
+            +run(bid Bid) None
+            -_is_anomaly(metrics Metrics) bool
+            -_report_idle(task_id int, t_service float) None
+        }
+        class TimeSeriesDbClient {
+            -str _db_url
+            +write(bid Bid) None
+        }
+        class AlertClient {
+            -str _pagerduty_url
+            +create_incident(bid Bid, metric str) str
+        }
+    }
+
+    namespace StatisticsService {
+        class StatsApp {
+            <<FastAPI>>
+            +on_new(event NewEvent, c StatsCollector) None
+            +on_reject(event RejectEvent, c StatsCollector) None
+            +on_task_status(event TaskStatusEvent, c StatsCollector) None
+            +summary(c StatsCollector) Summary
+            +precision(c StatsCollector) PrecisionReport
+            +timeline(c StatsCollector) list~TimelineEvent~
+            +reset(c StatsCollector) None
+        }
+        class StatsConfig {
+            +float confidence_t
+            +float rel_precision
+        }
+        class StatsCollector {
+            -dict~str, SourceStats~ _sources
+            -dict~int, WorkerStats~ _workers
+            -EventLog _timeline
+            -PrecisionChecker _precision
+            -datetime _t_start
+            -datetime _t_end
+            +on_new(event NewEvent) None
+            +on_reject(event RejectEvent) None
+            +on_taken(event TaskStatusEvent) None
+            +on_done(event TaskStatusEvent) None
+            +summary() Summary
+            +precision() PrecisionReport
+            +reset() None
+        }
+        class SourceStats {
+            -int _generated
+            -int _rejected
+            -RunningStat _wait
+            -RunningStat _service
+            +add_new() None
+            +add_reject() None
+            +add_wait(t float) None
+            +add_service(t float) None
+            +row(source_type str) SourceRow
+        }
+        class WorkerStats {
+            +int worker_id
+            -float _busy_time
+            +add_busy(t_service float) None
+            +row(total_time float) WorkerRow
+        }
+        class RunningStat {
+            -int _n
+            -float _mean
+            -float _m2
+            +add(x float) None
+            +mean() float
+            +variance() float
+        }
+        class EventLog {
+            -list~TimelineEvent~ _events
+            +append(ev TimelineEvent) None
+            +all() list~TimelineEvent~
+            +clear() None
+        }
+        class PrecisionChecker {
+            -float _t
+            -float _delta
+            +required_n(p_reject float) int
+            +check(generated int, p_reject float) PrecisionReport
+        }
+        class NewEvent {
+            <<BaseModel>>
+            +Bid bid
+        }
+        class RejectEvent {
+            <<BaseModel>>
+            +Bid bid
+        }
+        class TaskStatusEvent {
+            <<BaseModel>>
+            +Bid bid
+            +str status
+            +int worker_id
+            +float duration
+            +datetime at
+        }
+        class TimelineEvent {
+            <<dataclass>>
+            +datetime at
+            +str kind
+            +str source_type
+            +int seq
+            +int worker_id
+        }
+        class SourceRow {
+            <<dataclass>>
+            +str source_type
+            +int generated
+            +float p_reject
+            +float t_total
+            +float t_wait
+            +float t_service
+            +float d_wait
+            +float d_service
+        }
+        class WorkerRow {
+            <<dataclass>>
+            +int worker_id
+            +float utilization
+        }
+        class Summary {
+            <<dataclass>>
+            +list~SourceRow~ sources
+            +list~WorkerRow~ workers
+            +float total_time
+        }
+        class PrecisionReport {
+            <<dataclass>>
+            +int required_n
+            +int generated
+            +bool reached
+        }
+    }
+
+    %% Agent
+    AgentConfig ..> MetricsExporter : server_name, server_type
+    AgentConfig ..> PollingManager : timeout_min, timeout_max
+    AgentConfig ..> Client : reception_service_url
+    PollingManager --> MetricsExporter : _exporter, запрос метрик от ОС
+    PollingManager --> Client : _client, ServerStats
+    Client ..> PollingManager : Exception при ошибках сети
+    MetricsExporter ..> ServerStats : создаёт
+    ServerStats *-- Metrics
+    Client ..> ReceptionApp : HTTP POST /collect
+
+    %% Reception service
+    ReceptionApp ..> ReceptionBufferClient : Depends(get_buffer), put(bid)
+    ReceptionApp ..> ReceptionStatsClient : Depends(get_stats), notify
+    ReceptionApp ..> Bid : создаёт
+    ReceptionConfig ..> ReceptionBufferClient : redis_url
+    ReceptionConfig ..> ReceptionStatsClient : stats_server_url
+    ReceptionBufferClient ..> PutResult : возвращает
+    ReceptionBufferClient ..> BufferRedis : EVAL put_bid, PUBLISH buffer_updated
+    Bid *-- ServerStats
+
+    %% Worker dispatcher
+    DispatcherApp ..> WorkerManager : Depends(get_manager)
+    DispatcherConfig ..> DispatcherBufferClient : redis_url
+    DispatcherConfig ..> DispatcherStatsClient : stats_server_url
+    DispatcherConfig ..> WorkerManager : watchdog_interval
+    WorkerManager --> DispatcherBufferClient : _buffer_client
+    WorkerManager --> DispatcherStatsClient : _stats_client
+    WorkerManager o-- WorkerClient : _workers
+    WorkerClient --> WorkerStatus : status
+    WorkerClient ..> Bid : current_bid
+    DispatcherBufferClient ..> BufferRedis : EVAL take_next, subscribe
+    BufferRedis ..> DispatcherBufferClient : Pub/Sub buffer_updated
+
+    %% Worker
+    WorkerClient ..> WorkerApp : HTTP POST /process
+    WorkerApp ..> Worker : run(bid)
+    Worker --> TimeSeriesDbClient : _db
+    Worker --> AlertClient : _alerts
+    Worker ..> DispatcherApp : POST /update-status (IDLE)
+
+    %% Statistics service
+    ReceptionStatsClient ..> StatsApp : POST /webhooks/new, /webhooks/reject
+    DispatcherStatsClient ..> StatsApp : POST /task-status
+    StatsApp ..> StatsCollector : Depends(get_collector)
+    StatsApp ..> NewEvent
+    StatsApp ..> RejectEvent
+    StatsApp ..> TaskStatusEvent
+    StatsCollector o-- SourceStats : _sources
+    StatsCollector o-- WorkerStats : _workers
+    StatsCollector *-- EventLog : _timeline
+    StatsCollector *-- PrecisionChecker : _precision
+    StatsCollector ..> Summary : summary()
+    StatsCollector ..> PrecisionReport : precision()
+    StatsConfig ..> PrecisionChecker : confidence_t, rel_precision
+    SourceStats *-- RunningStat : _wait, _service
+    SourceStats ..> SourceRow : row()
+    WorkerStats ..> WorkerRow : row()
+    EventLog o-- TimelineEvent
+    Summary o-- SourceRow
+    Summary o-- WorkerRow
+    NewEvent --> Bid
+    RejectEvent --> Bid
+    TaskStatusEvent --> Bid
