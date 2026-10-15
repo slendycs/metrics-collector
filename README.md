@@ -19,7 +19,10 @@
 
 ```bash
 .
-├── docs                                   # Документация по проекту
-│   └── diagrams                           # Схемы и графики
-
+├── docs/                                  # Документация по проекту
+│   └── diagrams/                          # Схемы и графики
+├── .gitignore
+├── .python-version
+├── pyproject.toml
+└── README.md
 ```

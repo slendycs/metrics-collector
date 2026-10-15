@@ -8,60 +8,55 @@ sequenceDiagram
     participant DB as БД временных рядов
     participant PD as PagerDuty
     participant ST as Сервис статистики
- 
-    %% ===== Триггер А: пришла заявка =====
+
     Note over AG: Триггер А: срабатывание таймера источника
-    AG->>DP: sendMetrics(sourceId, metrics)
-    DP->>DP: создать Заявку (sourceId, seq, tвх)
-    DP-)ST: заявка сгенерирована (sourceId)
+    AG-)DP: sendMetrics(serverType, metrics)
+    Note over AG,DP: Асинхронная отправка: агент не ждёт результата<br/>и не знает об отказе (ИБ не зависит от состояния системы)
+    DP->>DP: создать Заявку (serverType, seq, tвх)
+    DP-)ST: заявка сгенерирована (serverType)
     DP->>BUF: put(заявка)
     Note over BUF: Lua-скрипт атомарно<br/>Д1ОЗ3: найти первое свободное место от начала буфера
- 
+
     alt Есть свободное место (HappyFlow или заявка встала в очередь)
         BUF-->>DP: OK (slot)
-        DP-->>AG: принято
         BUF-)DV: bufferUpdated
     else Буфер полон (отказ, Д1ОО5)
         BUF-->>DP: FULL
-        Note over DP,BUF: Д1ОО5: отказ вновь пришедшей заявке<br/>Буфер и заявки в нём не меняются, выбивания нет
-        DP-)ST: отказ (sourceId)
-        DP-->>AG: отказ (пакет потерян)
+        Note over DP,BUF: Д1ОО5: отказ вновь пришедшей заявке<br/>Буфер и заявки в нём не меняются, выбивания нет<br/>Пакет потерян, следующий придёт по таймеру агента
+        DP-)ST: отказ (serverType)
     end
     AG->>AG: запланировать следующий пакет через U(a,b)
- 
-    %% ===== Диспетчеризация =====
+
     Note over DV: Триггеры ДВ: Б1 = bufferUpdated, Б2 = workerFree
     DV->>DV: tryDispatch()
- 
+
     alt Все воркеры заняты
         Note over DV,BUF: Заявка остаётся в буфере, ДВ ждёт триггер Б2<br/>Воркеры не отказывают, они только заняты
     else Есть свободный воркер
         loop Пока в буфере есть заявки и есть свободный воркер
             DV->>DV: выбрать воркера k (Д2П1): первый свободный, начиная с воркера 1
             DV->>BUF: takeNext()
-            Note over BUF: Lua-скрипт атомарно<br/>Д2Б4: заявка источника с наивысшим приоритетом (меньший номер),<br/>при равных последняя поступившая, одна заявка, место освобождается
+            Note over BUF: Lua-скрипт атомарно<br/>Д2Б4: заявка источника с наивысшим приоритетом (по server_type),<br/>при равных последняя поступившая, одна заявка, место освобождается
             BUF-->>DV: заявка
             DV-)ST: заявка взята (tож = tтек - tвх)
             DV->>DV: пометить воркера k занятым
             DV-)W: process(заявка)
         end
     end
- 
-    %% ===== Обслуживание =====
+
     Note over W: ПЗ1: tобсл распределено экспоненциально
     W->>W: принять и десериализовать пакет
-    W->>DB: write(sourceId, timestamp, metrics)
+    W->>DB: write(serverType, timestamp, metrics)
     DB-->>W: OK
     W->>W: проверить пороги и аномалии
     opt Обнаружена аномалия (длинный хвост ПЗ1)
-        W->>PD: createIncident(sourceId, metric)
+        W->>PD: createIncident(serverType, metric)
         PD-->>W: incidentId
     end
     W-)DV: workerFree(k, tобсл)
     DV->>DV: пометить воркера k свободным
     DV-)ST: заявка обслужена (tобсл, tпреб)
- 
-    %% ===== Триггер Б2: освободился воркер =====
+
     Note over DV: Триггер Б2: воркер освободился<br/>Повторный запуск tryDispatch() — так заявка, ждавшая в буфере после отказов, уходит на обработку
     DV->>DV: tryDispatch()
     DV->>BUF: takeNext()
@@ -72,4 +67,4 @@ sequenceDiagram
         BUF-->>DV: заявка (Д2Б4)
         DV-)ST: заявка взята (tож)
         DV-)W: process(заявка) на освободившегося воркера по Д2П1
-    end
+end
