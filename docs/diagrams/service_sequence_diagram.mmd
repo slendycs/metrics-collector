@@ -20,19 +20,26 @@ sequenceDiagram
 
     Note over AG,ST: Триггер А: срабатывание таймера агента
     loop Пока агент работает (ИБ, бесконечный источник)
-        AG->>AG: collect() → ServerStats (id, server_name, server_type, metrics)
+        AG->>AG: collect() → ServerStats (server_name, server_type, metrics)
         AG->>DP: POST /collect(ServerStats)
-        DP->>DP: bid = Bid(source_name, source_type, seq, t_in = now, stats)
-        DP-)ST: POST /webhooks/new(bid)
+        DP->>DP: bid = Bid(source_name, source_type, t_in = now, stats), id и seq пока пусты
         DP->>BUF: put(bid)
-        Note over BUF: Lua put_bid (атомарно)<br/>Д1ОЗ3: первое свободное место от начала буфера, без сдвига очереди
+        Note over BUF: Lua put_bid (атомарно)
+        Note over BUF: INCR bid:id и seq:{source_name}: id и номер заявки выдаёт Redis
+        Note over BUF: Блокировки в ДП не нужны, работает при нескольких экземплярах ДП
+        Note over BUF: Д1ОЗ3: первое свободное место от начала буфера, без сдвига очереди
+        BUF-->>DP: PutResult(accepted, slot, bid_id, seq)
+        DP->>DP: bid.id = bid_id, bid.seq = seq
+        DP-)ST: POST /webhooks/new(bid)
 
         alt Есть свободное место (HappyFlow или заявка встала в очередь)
-            BUF-->>DP: PutResult(accepted = True, slot)
+            Note over DP,BUF: PutResult.accepted = True, slot занят
             BUF-)DV: PUBLISH buffer_updated (триггер Б1)
         else Буфер полон (отказ, Д1ОО5)
-            BUF-->>DP: PutResult(accepted = False, slot = None)
-            Note over DP,BUF: Д1ОО5: отказ вновь пришедшей заявке<br/>Буфер и заявки в нём не меняются, выбивания нет<br/>Пакет потерян, следующий придёт по таймеру агента
+            Note over DP,BUF: PutResult.accepted = False, slot = None, id и seq всё равно выданы
+            Note over DP,BUF: Д1ОО5: отказ вновь пришедшей заявке
+            Note over DP,BUF: Буфер и заявки в нём не меняются, выбивания нет
+            Note over DP,BUF: Пакет потерян, следующий придёт по таймеру агента
             DP-)ST: POST /webhooks/reject(bid)
         end
 
@@ -43,20 +50,24 @@ sequenceDiagram
         AG->>AG: sleep(uniform(timeout_min, timeout_max)) (ИЗ2)
     end
 
-    Note over DV,W: Диспетчеризация ДВ<br/>Триггеры: Б1 buffer_updated, Б2 освобождение воркера, новый воркер, watchdog
+    Note over DV,W: Диспетчеризация ДВ
+    Note over DV,W: Триггеры: Б1 buffer_updated, Б2 освобождение воркера, новый воркер, watchdog
     DV->>DV: on_buffer_updated() / on_worker_free() / add_worker() / watchdog()
     DV->>DV: _try_dispatch() под asyncio.Lock
 
     loop Пока есть свободный воркер и заявка в буфере
         DV->>DV: _get_worker() (Д2П1: первый IDLE по возрастанию priority)
         alt Свободных воркеров нет (воркеры не отказывают, они заняты)
-            Note over DV,BUF: Заявки остаются в буфере, цикл завершён<br/>Ждём триггер Б2 (освобождение воркера)
+            Note over DV,BUF: Заявки остаются в буфере, цикл завершён
+            Note over DV,BUF: Ждём триггер Б2 (освобождение воркера)
         else Воркер k найден
             DV->>BUF: pull()
-            Note over BUF: Lua take_next (атомарно)<br/>Д2Б4: одна заявка, приоритет по source_type, при равных последняя поступившая, место освобождается
+            Note over BUF: Lua take_next (атомарно)
+            Note over BUF: Д2Б4: одна заявка, приоритет по source_type, при равных последняя поступившая, место освобождается
             alt Буфер пуст
                 BUF-->>DV: None
-                Note over DV: Цикл завершён, воркер k остаётся IDLE<br/>Ждём триггер Б1
+                Note over DV: Цикл завершён, воркер k остаётся IDLE
+                Note over DV: Ждём триггер Б1
             else В буфере есть заявка
                 BUF-->>DV: bid
                 DV->>DV: worker.status = BUSY, worker.current_bid = bid
@@ -83,7 +94,8 @@ sequenceDiagram
     DV-->>W: 200 OK
     DV-)ST: POST /task-status(bid, done, worker_id, t_обсл, at)
     DV->>DV: _try_dispatch()
-    Note over DV,BUF: Тот же цикл, что в блоке диспетчеризации<br/>Заявка, ждавшая в буфере (в том числе после отказов), уходит на освободившегося воркера
+    Note over DV,BUF: Тот же цикл, что в блоке диспетчеризации
+    Note over DV,BUF: Заявка, ждавшая в буфере (в том числе после отказов), уходит на освободившегося воркера
 
     Note over DV: Страховка от потери buffer_updated (Pub/Sub не гарантирует доставку)
     loop Каждые watchdog_interval секунд

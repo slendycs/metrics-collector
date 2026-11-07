@@ -46,13 +46,13 @@ classDiagram
         }
         class ServerStats {
             <<dataclass>>
-            +int id
             +str server_name
             +str server_type
             +Metrics metrics
         }
         class Bid {
             <<dataclass>>
+            +int id
             +str source_name
             +str source_type
             +int seq
@@ -63,6 +63,8 @@ classDiagram
             <<dataclass>>
             +bool accepted
             +int slot
+            +int bid_id
+            +int seq
         }
     }
 
@@ -92,7 +94,7 @@ classDiagram
 
     class BufferRedis {
         <<Redis + Lua>>
-        put_bid : Д1ОЗ3 первое свободное место
+        put_bid : атомарно INCR id и seq, затем Д1ОЗ3 первое свободное место
         take_next : Д2Б4 приоритет по source_type
         buffer_updated : Pub/Sub канал
     }
@@ -306,7 +308,7 @@ classDiagram
     %% Reception service
     ReceptionApp ..> ReceptionBufferClient : Depends(get_buffer), put(bid)
     ReceptionApp ..> ReceptionStatsClient : Depends(get_stats), notify
-    ReceptionApp ..> Bid : создаёт
+    ReceptionApp ..> Bid : создаёт, затем записывает id и seq из PutResult
     ReceptionConfig ..> ReceptionBufferClient : redis_url
     ReceptionConfig ..> ReceptionStatsClient : stats_server_url
     ReceptionBufferClient ..> PutResult : возвращает

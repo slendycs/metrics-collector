@@ -1,0 +1,21 @@
+[project]
+name = "agent"
+version = "0.1.0"
+description = "Agent service for Metric Collector"
+authors = [
+    { name = "Artem Shevchenko", email = "slendycs@yandex.ru" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "psutil>=7.2.2",
+    "pydantic>=2.14.3",
+    "pydantic-settings>=2.16.2",
+    "requests>=2.34.2",
+]
+
+[project.scripts]
+agent = "agent:main"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
