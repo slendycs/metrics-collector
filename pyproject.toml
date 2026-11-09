@@ -14,3 +14,9 @@ members = [
     "apps/*",
     "libs/*",
 ]
+
+[dependency-groups]
+dev = [
+    "allure-pytest>=2.16.2",
+    "pytest>=9.2.0",
+]

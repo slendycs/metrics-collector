@@ -4,10 +4,9 @@ from requests import HTTPError
 from pydantic import ValidationError
 import psutil
 
-from client.metrics_send_client import Client
-from config.config import get_settings
-from config.logger import logger
-from exporter.metrics_exporter import MetricsExporter
+from client import Client
+from config import get_settings, logger
+from exporter import MetricsExporter
 
 
 

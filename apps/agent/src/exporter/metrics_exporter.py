@@ -2,10 +2,8 @@ import psutil
 import time
 from datetime import datetime
 
-from config.config import get_settings
-from models.server_stats import ServerStats
-from models.metrics import Metrics
-from models.enums import ServerTypes
+from config import get_settings
+from models import ServerStats, Metrics, ServerTypes
 
 
 class MetricsExporter:

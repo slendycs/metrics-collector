@@ -1,7 +1,7 @@
 import requests
 
-from config.config import get_settings
-from models.server_stats import ServerStatsDTO, ServerStats
+from config import get_settings
+from models import ServerStatsDTO, ServerStats
 
 class Client:
     _POST_ENDPOINT:str = '/collect'

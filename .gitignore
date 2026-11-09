@@ -10,4 +10,3 @@ wheels/
 # Virtual environments
 .venv
 .env
-services.json
