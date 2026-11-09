@@ -19,10 +19,13 @@
 
 ```bash
 .
-├── docs/                                  # Документация по проекту
-│   └── diagrams/                          # Схемы и графики
-├── .gitignore
-├── .python-version
+├── apps
+│   └── agent        # Микросервис агента
+├── docs             # Документация по проекту
+│   └── diagrams     # Схемы и графики
+├── libs
+│
 ├── pyproject.toml
-└── README.md
+├── README.md
+└── uv.lock
 ```

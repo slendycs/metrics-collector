@@ -10,3 +10,9 @@ wheels/
 # Virtual environments
 .venv
 .env
+.opencode
+
+# Test reports
+allure-results/
+allure-report/
+
