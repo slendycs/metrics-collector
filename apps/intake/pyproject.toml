@@ -1,0 +1,18 @@
+[project]
+name = "intake"
+version = "0.1.0"
+authors = [
+    { name = "Artem Shevchenko", email = "slendycs@yandex.ru" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.162.4",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+intake = "intake.main:app"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
