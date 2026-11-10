@@ -7,6 +7,7 @@ members = [
     "agent",
     "intake",
     "metrics-collector",
+    "models",
 ]
 
 [[package]]
@@ -14,6 +15,7 @@ name = "agent"
 version = "0.1.0"
 source = { editable = "apps/agent" }
 dependencies = [
+    { name = "models" },
     { name = "psutil" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -22,6 +24,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "models", editable = "libs/models" },
     { name = "psutil", specifier = ">=7.2.2" },
     { name = "pydantic", specifier = ">=2.14.3" },
     { name = "pydantic-settings", specifier = ">=2.16.2" },
@@ -293,6 +296,11 @@ dev = [
     { name = "allure-pytest", specifier = ">=2.16.2" },
     { name = "pytest", specifier = ">=9.2.0" },
 ]
+
+[[package]]
+name = "models"
+version = "0.0.1"
+source = { editable = "libs/models" }
 
 [[package]]
 name = "opentelemetry-api"
