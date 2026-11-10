@@ -8,7 +8,17 @@ os.environ.setdefault("TIMEOUT_MAX", "2")
 os.environ.setdefault("RECEPTION_SERVICE_URL", "http://reception.test")
 os.environ.setdefault("LOG_LEVEL", "INFO")
 
-pytest_plugins = [
-    "fixtures.models",
-    "fixtures.agent",
-]
+# Fixtures are imported directly instead of via `pytest_plugins`: defining
+# `pytest_plugins` in a non-top-level conftest is no longer supported by pytest.
+from fixtures.agent import (  # noqa: E402,F401
+    client,
+    exporter,
+    http_server,
+    pooling_manager,
+)
+from fixtures.models import (  # noqa: E402,F401
+    metrics,
+    metrics_factory,
+    server_stats,
+    server_stats_factory,
+)

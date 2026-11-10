@@ -34,8 +34,7 @@ def _run_single_iteration(
     with allure.step("Подготовить моки экспортёра и клиента"):
         manager._exporter = MagicMock()
         manager._client = MagicMock()
-        manager._timeout_min = timeout_min
-        manager._timeout_max = timeout_max
+        settings = MagicMock(timeout_min=timeout_min, timeout_max=timeout_max)
         if collect_result is not None:
             manager._exporter.collect.return_value = collect_result
         if collect_effect is not None:
@@ -44,9 +43,14 @@ def _run_single_iteration(
             manager._client.post.side_effect = post_effect
 
     with allure.step("Выполнить одну итерацию цикла опроса"):
-        with patch(
-            "manager.pooling_manager.sleep", side_effect=_StopPooling
-        ) as sleep_mock:
+        with (
+            patch(
+                "manager.pooling_manager.get_settings", return_value=settings
+            ),
+            patch(
+                "manager.pooling_manager.sleep", side_effect=_StopPooling
+            ) as sleep_mock,
+        ):
             with pytest.raises(_StopPooling):
                 manager.pooling()
 
@@ -219,15 +223,27 @@ class TestPoolingManager:
             exporter = MetricsExporter()
             exporter._interval = 0.01
             client = Client()
-            client._base_url = f"http://{host}:{port}"
 
             pooling_manager._exporter = exporter
             pooling_manager._client = client
-            pooling_manager._timeout_min = 0
-            pooling_manager._timeout_max = 0
+
+            client_settings = MagicMock(
+                reception_service_url=f"http://{host}:{port}"
+            )
+            manager_settings = MagicMock(timeout_min=0, timeout_max=0)
 
         with allure.step("Выполнить одну итерацию цикла"):
-            with patch("manager.pooling_manager.sleep", side_effect=_StopPooling):
+            with (
+                patch(
+                    "client.metrics_send_client.get_settings",
+                    return_value=client_settings,
+                ),
+                patch(
+                    "manager.pooling_manager.get_settings",
+                    return_value=manager_settings,
+                ),
+                patch("manager.pooling_manager.sleep", side_effect=_StopPooling),
+            ):
                 with pytest.raises(_StopPooling):
                     pooling_manager.pooling()
 

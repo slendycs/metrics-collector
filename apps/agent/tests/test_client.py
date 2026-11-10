@@ -4,29 +4,53 @@ import allure
 import pytest
 import requests
 
-from client import Client
-from config import get_settings
 from models import ServerStatsDTO
+
+
+def _settings_with_url(url: str) -> MagicMock:
+    return MagicMock(reception_service_url=url)
 
 
 class TestClient:
     @pytest.mark.unit
-    @allure.title("Базовый URL клиента не содержит завершающего слеша [UNIT]")
-    def test_base_url_has_no_trailing_slash(self):
-        with allure.step("Сравнить базовый URL клиента с настройкой сервиса приёма"):
-            assert Client._base_url == get_settings().reception_service_url.rstrip("/")
+    @allure.title("post не дублирует слеш при завершающем слеше базового URL [UNIT]")
+    def test_post_strips_trailing_slash_from_base_url(self, client, server_stats):
+        with allure.step("Настроить базовый URL с завершающим слешем"):
+            settings = _settings_with_url("http://reception.test/")
+            response = MagicMock()
+
+        with allure.step("Отправить пакет метрик через POST"):
+            with (
+                patch(
+                    "client.metrics_send_client.get_settings",
+                    return_value=settings,
+                ),
+                patch(
+                    "client.metrics_send_client.requests.post", return_value=response
+                ) as post,
+            ):
+                client.post(server_stats)
+
+        with allure.step("Проверить, что URL собран без двойного слеша"):
+            assert post.call_args.args[0] == "http://reception.test/collect"
 
     @pytest.mark.unit
     @allure.title("post отправляет DTO метрик на /collect [UNIT]")
     def test_post_sends_dto_payload(self, client, server_stats):
         with allure.step("Подготовить клиент и мок HTTP-ответа"):
-            client._base_url = "http://reception.test"
+            settings = _settings_with_url("http://reception.test")
             response = MagicMock()
 
         with allure.step("Отправить пакет метрик через POST"):
-            with patch(
-                "client.metrics_send_client.requests.post", return_value=response
-            ) as post:
+            with (
+                patch(
+                    "client.metrics_send_client.get_settings",
+                    return_value=settings,
+                ),
+                patch(
+                    "client.metrics_send_client.requests.post", return_value=response
+                ) as post,
+            ):
                 client.post(server_stats)
 
         with allure.step("Проверить URL и JSON-payload запроса"):
@@ -78,10 +102,13 @@ class TestClient:
     def test_post_reaches_real_http_server(self, client, server_stats, http_server):
         with allure.step("Направить клиент на локальный HTTP-сервер"):
             host, port = http_server.server_address[:2]
-            client._base_url = f"http://{host}:{port}"
+            settings = _settings_with_url(f"http://{host}:{port}")
 
         with allure.step("Отправить пакет метрик"):
-            client.post(server_stats)
+            with patch(
+                "client.metrics_send_client.get_settings", return_value=settings
+            ):
+                client.post(server_stats)
 
         with allure.step("Проверить полученный сервером запрос"):
             assert len(http_server.requests) == 1
@@ -98,8 +125,13 @@ class TestClient:
         with allure.step("Настроить сервер на ответ 500 и направить к нему клиент"):
             host, port = http_server.server_address[:2]
             http_server.response_status = 500
-            client._base_url = f"http://{host}:{port}"
+            settings = _settings_with_url(f"http://{host}:{port}")
 
         with allure.step("Отправить метрики и ожидать HTTPError"):
-            with pytest.raises(requests.HTTPError):
+            with (
+                patch(
+                    "client.metrics_send_client.get_settings", return_value=settings
+                ),
+                pytest.raises(requests.HTTPError),
+            ):
                 client.post(server_stats)

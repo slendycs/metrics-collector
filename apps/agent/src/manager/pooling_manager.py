@@ -13,8 +13,6 @@ from exporter import MetricsExporter
 class PoolingManager:
     _client = Client()
     _exporter = MetricsExporter()
-    _timeout_min:int = get_settings().timeout_min
-    _timeout_max:int = get_settings().timeout_max
 
 
     def pooling(self) -> None:
@@ -32,4 +30,7 @@ class PoolingManager:
                 logger.critical(f'Unable to access /proc: {err}')
 
 
-            sleep(randint(self._timeout_min, self._timeout_max))
+            sleep(randint(
+                get_settings().timeout_min, 
+                get_settings().timeout_max
+            ))

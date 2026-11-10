@@ -50,14 +50,19 @@ class TestMetricsExporter:
     @allure.title("collect собирает ServerStats и считает скорость диска [UNIT]")
     def test_collect_builds_server_stats_from_psutil(self, exporter):
         with allure.step("Подготовить параметры экспортёра и счётчики диска"):
-            exporter._server_name = "node-7"
-            exporter._server_type = ServerTypes.PRODUCTION
             exporter._interval = 0.5
             before = _disk_counters(read=0, write=0)
             after = _disk_counters(read=768_000, write=256_000)
+            settings = MagicMock(
+                server_name="node-7", server_type=ServerTypes.PRODUCTION
+            )
 
         with allure.step("Собрать метрики с моками psutil"):
             with (
+                patch(
+                    "exporter.metrics_exporter.get_settings",
+                    return_value=settings,
+                ),
                 patch(
                     "exporter.metrics_exporter.psutil.disk_io_counters",
                     side_effect=[before, after],
@@ -99,8 +104,6 @@ class TestMetricsExporter:
     def test_collect_clamps_negative_disk_delta_to_zero(self, exporter):
         with allure.step("Подготовить уменьшившиеся счётчики диска"):
             exporter._interval = 0.1
-            exporter._server_name = "node-7"
-            exporter._server_type = ServerTypes.TEST
             before = _disk_counters(read=10_000, write=10_000)
             after = _disk_counters(read=5_000, write=4_000)
 

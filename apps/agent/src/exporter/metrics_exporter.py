@@ -7,8 +7,6 @@ from models import ServerStats, Metrics, ServerTypes
 
 
 class MetricsExporter:
-    _server_name:str = get_settings().server_name
-    _server_type:ServerTypes = get_settings().server_type
     _interval:float = 1.0
 
 
@@ -55,7 +53,7 @@ class MetricsExporter:
         )
 
         return ServerStats(
-            server_name=self._server_name,
-            server_type=self._server_type,
+            server_name=get_settings().server_name,
+            server_type=get_settings().server_type,
             metrics=metrics_package
         )

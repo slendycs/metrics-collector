@@ -5,7 +5,6 @@ from models import ServerStatsDTO, ServerStats
 
 class Client:
     _POST_ENDPOINT:str = '/collect'
-    _base_url:str = get_settings().reception_service_url.rstrip('/')
 
     def post(self, stats:ServerStats) -> None:
         """
@@ -19,9 +18,10 @@ class Client:
         """
         dto = ServerStatsDTO.model_validate(stats)
         payload = dto.model_dump(mode='json')
+        url = get_settings().reception_service_url.rstrip('/') + self._POST_ENDPOINT
 
         response = requests.post(
-            self._base_url + self._POST_ENDPOINT, 
+            url, 
             json=payload
         )
         response.raise_for_status()
