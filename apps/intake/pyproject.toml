@@ -6,6 +6,7 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "models",
     "fastapi>=0.162.4",
     "uvicorn>=0.54.0",
 ]
@@ -16,3 +17,6 @@ intake = "intake.main:app"
 [build-system]
 requires = ["uv_build>=0.12.21,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+models = { workspace = true }

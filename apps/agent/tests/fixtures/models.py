@@ -38,6 +38,7 @@ def server_stats_factory(metrics_factory):
         values = {
             "server_name": "agent-1",
             "server_type": ServerTypes.TEST,
+            "seq": 1,
             "metrics": metrics_factory(),
         }
         values.update(overrides)

@@ -256,6 +256,7 @@ class TestPoolingManager:
             payload = received["json"]
             assert payload["server_name"]
             assert payload["server_type"] in {"production", "staging", "test"}
+            assert payload["seq"] == 1
             assert set(payload["metrics"]) == {
                 "cpu_load",
                 "ram_load",

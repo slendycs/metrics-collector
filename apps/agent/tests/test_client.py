@@ -61,6 +61,9 @@ class TestClient:
                 "http://reception.test/collect", json=expected_payload
             )
 
+        with allure.step("Проверить seq в JSON-payload"):
+            assert expected_payload["seq"] == server_stats.seq
+
         with allure.step("Проверить вызов raise_for_status"):
             response.raise_for_status.assert_called_once_with()
 
@@ -118,6 +121,9 @@ class TestClient:
             assert received["json"] == ServerStatsDTO.model_validate(
                 server_stats
             ).model_dump(mode="json")
+
+        with allure.step("Проверить seq в полученном payload"):
+            assert received["json"]["seq"] == server_stats.seq
 
     @pytest.mark.integration
     @allure.title("post поднимает HTTPError на реальном ответе 500 [INTEGRATION]")

@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import allure
 import pytest
 
+from exporter import MetricsExporter
 from models import ServerStats
 from models.enums import ServerTypes
 
@@ -13,6 +14,49 @@ def _disk_counters(read: int, write: int) -> MagicMock:
     counters.read_bytes = read
     counters.write_bytes = write
     return counters
+
+
+def _collect_many(exporter, *, times: int) -> list[ServerStats]:
+    """Runs collect() `times` times with psutil and time fully mocked."""
+    with allure.step(f"Собрать метрики {times} раз(а) с моками psutil и time"):
+        counters = []
+        monotonic_values = []
+        for index in range(times):
+            counters.extend(
+                [
+                    _disk_counters(read=0, write=0),
+                    _disk_counters(read=1024, write=1024),
+                ]
+            )
+            monotonic_values.extend([float(index), float(index) + 1.0])
+
+        settings = MagicMock(server_name="node-7", server_type=ServerTypes.PRODUCTION)
+        with (
+            patch(
+                "exporter.metrics_exporter.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "exporter.metrics_exporter.psutil.disk_io_counters",
+                side_effect=counters,
+            ),
+            patch(
+                "exporter.metrics_exporter.psutil.cpu_percent", return_value=10.0
+            ),
+            patch(
+                "exporter.metrics_exporter.psutil.virtual_memory",
+                return_value=MagicMock(percent=20.0),
+            ),
+            patch(
+                "exporter.metrics_exporter.psutil.getloadavg",
+                return_value=(0.1, 0.2, 0.3),
+            ),
+            patch(
+                "exporter.metrics_exporter.time.monotonic",
+                side_effect=monotonic_values,
+            ),
+        ):
+            return [exporter.collect() for _ in range(times)]
 
 
 class TestMetricsExporter:
@@ -134,6 +178,42 @@ class TestMetricsExporter:
         with allure.step("Проверить, что скорости чтения и записи равны нулю"):
             assert result.metrics.disk_read == 0
             assert result.metrics.disk_write == 0
+
+    @pytest.mark.unit
+    @allure.title("Первый collect возвращает seq равный 1 [UNIT]")
+    def test_first_collect_returns_seq_one(self, exporter):
+        with allure.step("Собрать метрики один раз"):
+            [result] = _collect_many(exporter, times=1)
+
+        with allure.step("Проверить начальный seq"):
+            assert result.seq == 1
+
+    @pytest.mark.unit
+    @allure.title("Последовательные collect возвращают возрастающие seq [UNIT]")
+    def test_sequential_collects_increment_seq(self, exporter):
+        with allure.step("Собрать метрики три раза подряд"):
+            results = _collect_many(exporter, times=3)
+
+        with allure.step("Проверить монотонный рост seq"):
+            assert [result.seq for result in results] == [1, 2, 3]
+
+    @pytest.mark.unit
+    @allure.title("Новый экземпляр экспортёра начинает счёт seq заново [UNIT]")
+    def test_new_exporter_restarts_seq(self, exporter):
+        with allure.step("Собрать метрики старым экземпляром дважды"):
+            first_results = _collect_many(exporter, times=2)
+
+        with allure.step("Создать новый экземпляр и собрать метрики"):
+            new_exporter = MetricsExporter()
+            new_results = _collect_many(new_exporter, times=1)
+
+        with allure.step("Собрать метрики старым экземпляром ещё раз"):
+            continued_results = _collect_many(exporter, times=1)
+
+        with allure.step("Проверить перезапуск и продолжение счёта"):
+            assert [result.seq for result in first_results] == [1, 2]
+            assert new_results[0].seq == 1
+            assert continued_results[0].seq == 3
 
     @pytest.mark.integration
     @allure.title("collect получает реальные метрики через psutil [INTEGRATION]")

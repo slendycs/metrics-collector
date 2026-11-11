@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
-app = FastAPI()
+from routes import intake_router, service_router
 
-@app.get('/healt')
-def healh() -> int:
-    return 200
+app = FastAPI()
+app.include_router(intake_router)
+app.include_router(service_router)

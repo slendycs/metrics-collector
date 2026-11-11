@@ -17,7 +17,6 @@ source = { editable = "apps/agent" }
 dependencies = [
     { name = "models" },
     { name = "psutil" },
-    { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "requests" },
 ]
@@ -26,7 +25,6 @@ dependencies = [
 requires-dist = [
     { name = "models", editable = "libs/models" },
     { name = "psutil", specifier = ">=7.2.2" },
-    { name = "pydantic", specifier = ">=2.14.3" },
     { name = "pydantic-settings", specifier = ">=2.16.2" },
     { name = "requests", specifier = ">=2.34.2" },
 ]
@@ -269,12 +267,14 @@ version = "0.1.0"
 source = { editable = "apps/intake" }
 dependencies = [
     { name = "fastapi" },
+    { name = "models" },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.162.4" },
+    { name = "models", editable = "libs/models" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 
@@ -301,6 +301,12 @@ dev = [
 name = "models"
 version = "0.0.1"
 source = { editable = "libs/models" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.14.3" }]
 
 [[package]]
 name = "opentelemetry-api"

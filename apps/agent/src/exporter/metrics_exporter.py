@@ -3,11 +3,12 @@ import time
 from datetime import datetime
 
 from config import get_settings
-from models import ServerStats, Metrics, ServerTypes
+from models import ServerStats, Metrics
 
 
 class MetricsExporter:
     _interval:float = 1.0
+    _seq:int = 0
 
 
     def _read_disk_bytes(self) -> tuple[int, int]:
@@ -52,8 +53,10 @@ class MetricsExporter:
             timestamp=datetime.now()
         )
 
+        self._seq += 1
         return ServerStats(
             server_name=get_settings().server_name,
             server_type=get_settings().server_type,
+            seq=self._seq,
             metrics=metrics_package
         )

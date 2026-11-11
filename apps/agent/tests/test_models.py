@@ -104,6 +104,7 @@ class TestMetricsModels:
         with allure.step("Проверить вложенный MetricsDTO"):
             assert dto.server_name == "agent-1"
             assert dto.server_type is ServerTypes.TEST
+            assert dto.seq == server_stats.seq
             assert isinstance(dto.metrics, MetricsDTO)
             assert dto.metrics.disk_read == server_stats.metrics.disk_read
 
@@ -114,3 +115,31 @@ class TestMetricsModels:
             assert isinstance(server_stats.metrics, Metrics)
             assert server_stats.server_name == "agent-1"
             assert server_stats.server_type is ServerTypes.TEST
+            assert server_stats.seq == 1
+
+    @pytest.mark.unit
+    @allure.title("ServerStatsDTO отклоняет payload без seq [UNIT]")
+    def test_server_stats_dto_rejects_payload_without_seq(self, server_stats):
+        with allure.step("Подготовить payload без seq"):
+            payload = ServerStatsDTO.model_validate(server_stats).model_dump(
+                mode="json"
+            )
+            payload.pop("seq")
+
+        with allure.step("Провалидировать payload без seq"):
+            with pytest.raises(ValidationError):
+                ServerStatsDTO.model_validate(payload)
+
+    @pytest.mark.unit
+    @allure.title("ServerStatsDTO сериализует seq в JSON [UNIT]")
+    def test_server_stats_dto_serializes_seq(self, server_stats_factory):
+        with allure.step("Создать ServerStats с нестандартным seq"):
+            server_stats = server_stats_factory(seq=42)
+
+        with allure.step("Сериализовать ServerStatsDTO в JSON-совместимый dict"):
+            payload = ServerStatsDTO.model_validate(server_stats).model_dump(
+                mode="json"
+            )
+
+        with allure.step("Проверить seq в payload"):
+            assert payload["seq"] == 42

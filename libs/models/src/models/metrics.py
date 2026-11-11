@@ -31,9 +31,10 @@ class MetricsDTO(BaseModel):
 
 @dataclass
 class ServerStats:
-	server_name:str # Уникальное имя сервера
-	server_type:ServerTypes # production, staging, test
-	metrics:Metrics # Набор метрик
+      server_name:str # Уникальное имя сервера
+      server_type:ServerTypes # production, staging, test
+      seq:int # Порядковый номер заявки 
+      metrics:Metrics # Набор метрик
 
 
 class ServerStatsDTO(BaseModel):
@@ -44,4 +45,5 @@ class ServerStatsDTO(BaseModel):
 
     server_name:str
     server_type:ServerTypes
+    seq:int
     metrics:MetricsDTO
