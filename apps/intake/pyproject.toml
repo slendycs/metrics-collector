@@ -7,10 +7,12 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "models",
+    "buffer",
     "fastapi>=0.162.4",
     "uvicorn>=0.54.0",
     "pydantic>=2.14.3",
     "pydantic-settings>=2.16.2",
+    "redis>=8.1.0",
 ]
 
 [project.scripts]
@@ -22,3 +24,4 @@ build-backend = "uv_build"
 
 [tool.uv.sources]
 models = { workspace = true }
+buffer = { workspace = true }

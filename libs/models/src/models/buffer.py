@@ -1,6 +1,7 @@
 from datetime import datetime
 from dataclasses import dataclass
 from pydantic import BaseModel, ConfigDict
+from typing import Optional
 
 from .enums import ServerTypes
 from .metrics import Metrics, MetricsDTO
@@ -8,12 +9,12 @@ from .metrics import Metrics, MetricsDTO
 
 @dataclass
 class Bid:
-    id:int # id заявки
     source_name:str # Имя сервера
     source_type:ServerTypes # Тип сервера
     seq:int # Порядковый номер заявки внутри источника
-    time_in:datetime # 
-    stats:Metrics
+    time_in:datetime # Время поступления заявки
+    stats:Metrics # Пакет метрик
+    id:Optional[int] = None # id заявки (назначается Redis)
 
 
 class BidDTO(BaseModel):
@@ -22,13 +23,12 @@ class BidDTO(BaseModel):
         frozen=True
     )
 
-    id:int
     source_name:str
     source_type:ServerTypes
     seq:int
     time_in:datetime
     stats:MetricsDTO
-
+    id:Optional[int] = None
 
 @dataclass
 class PutResult:

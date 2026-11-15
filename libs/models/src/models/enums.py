@@ -13,3 +13,7 @@ class LogLevel(StrEnum):
     WARNING = 'WARNING'
     ERROR = 'ERROR'
     CRITICAL = 'CRITICAL'
+
+
+class BufferTypes(StrEnum):
+    REDIS = 'REDIS'

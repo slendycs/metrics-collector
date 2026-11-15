@@ -28,6 +28,14 @@ class MetricsDTO(BaseModel):
     load_average:list[float]
     timestamp:datetime
 
+    def to_obj(self) -> Metrics:
+          return Metrics(self.cpu_load,
+                         self.ram_load,
+                         self.disk_read,
+                         self.disk_write,
+                         self.load_average,
+                         self.timestamp)
+
 
 @dataclass
 class ServerStats:
@@ -47,3 +55,9 @@ class ServerStatsDTO(BaseModel):
     server_type:ServerTypes
     seq:int
     metrics:MetricsDTO
+
+    def to_obj(self) -> ServerStats:
+          return ServerStats(self.server_name,
+                             self.server_type,
+                             self.seq,
+                             self.metrics.to_obj())
