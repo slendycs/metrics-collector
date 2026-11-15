@@ -1,6 +1,7 @@
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import cast
 
 import pytest
 
@@ -24,18 +25,26 @@ def pooling_manager():
     return PoolingManager()
 
 
+class _TestServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer that records received requests."""
+
+    requests: list[dict[str, object]] = []
+    response_status: int = 200
+
+
 class _RecordingHandler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802 - required by BaseHTTPRequestHandler
         length = int(self.headers.get("Content-Length", 0))
         raw_body = self.rfile.read(length)
-        self.server.requests.append(
+        server = cast(_TestServer, self.server)
+        server.requests.append(
             {
                 "path": self.path,
                 "headers": dict(self.headers),
                 "json": json.loads(raw_body),
             }
         )
-        self.send_response(getattr(self.server, "response_status", 200))
+        self.send_response(server.response_status)
         self.end_headers()
         self.wfile.write(b"{}")
 
@@ -46,7 +55,7 @@ class _RecordingHandler(BaseHTTPRequestHandler):
 @pytest.fixture
 def http_server():
     """Runs a real local HTTP server and exposes the requests it received."""
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _RecordingHandler)
+    server = _TestServer(("127.0.0.1", 0), _RecordingHandler)
     server.requests = []
     server.response_status = 200
     thread = threading.Thread(target=server.serve_forever, daemon=True)

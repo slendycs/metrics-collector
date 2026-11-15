@@ -80,7 +80,7 @@ class TestSettings:
             monkeypatch.setenv("LOG_LEVEL", "DEBUG")
 
         with allure.step("Создать настройки без .env файла"):
-            settings = Settings(_env_file=None)
+            settings = Settings(_env_file=None)  # type: ignore
 
         with allure.step("Проверить значения из окружения"):
             assert settings.server_name == "env-agent"
@@ -117,7 +117,7 @@ class TestSettings:
             )
 
         with allure.step("Прочитать настройки из .env файла"):
-            settings = Settings(_env_file=env_file)
+            settings = Settings(_env_file=env_file)  # type: ignore
 
         with allure.step("Проверить значения из файла"):
             assert settings.server_name == "file-agent"

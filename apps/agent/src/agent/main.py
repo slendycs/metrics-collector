@@ -1,4 +1,4 @@
-from .manager import PoolingManager
+from agent.manager import PoolingManager
 
 
 def main() -> None:

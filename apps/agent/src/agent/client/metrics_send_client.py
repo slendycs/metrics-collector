@@ -1,6 +1,6 @@
 import requests
 
-from ..config import get_settings
+from agent.config import get_settings
 from models import ServerStatsDTO, ServerStats
 
 class Client:

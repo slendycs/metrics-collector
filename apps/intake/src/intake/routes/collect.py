@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
 from models import ServerStats
 
-# from ..clients.redis_client import RedisBuffer
-from ..clients.buffer_client import BufferClient
+# from intake.clients.redis_client import RedisBuffer
+from intake.clients.buffer_client import BufferClient
 
 intake_router = APIRouter()
 

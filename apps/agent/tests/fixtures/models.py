@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 import pytest
 
@@ -10,8 +11,8 @@ from models.enums import ServerTypes
 def metrics_factory():
     """Builds a Metrics dataclass with overridable fields."""
 
-    def factory(**overrides):
-        values = {
+    def factory(**overrides: Any) -> Metrics:
+        values: dict[str, Any] = {
             "cpu_load": 12.5,
             "ram_load": 43.2,
             "disk_read": 1024,
@@ -34,8 +35,8 @@ def metrics(metrics_factory):
 def server_stats_factory(metrics_factory):
     """Builds a ServerStats dataclass with overridable fields."""
 
-    def factory(**overrides):
-        values = {
+    def factory(**overrides: Any) -> ServerStats:
+        values: dict[str, Any] = {
             "server_name": "agent-1",
             "server_type": ServerTypes.TEST,
             "seq": 1,
