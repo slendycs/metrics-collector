@@ -59,6 +59,21 @@ def _run_single_iteration(
 
 class TestPoolingManager:
     @pytest.mark.unit
+    @allure.title("Каждый PoolingManager создаёт собственные клиент и экспортёр [UNIT]")
+    def test_creates_own_collaborators(self):
+        with allure.step("Создать два менеджера опроса"):
+            first = PoolingManager()
+            second = PoolingManager()
+
+        with allure.step("Проверить типы зависимостей"):
+            assert isinstance(first._client, Client)
+            assert isinstance(first._exporter, MetricsExporter)
+
+        with allure.step("Проверить, что зависимости не разделяются между экземплярами"):
+            assert first._client is not second._client
+            assert first._exporter is not second._exporter
+
+    @pytest.mark.unit
     @allure.title("Успешная итерация отправляет метрики и уходит в sleep [UNIT]")
     def test_successful_iteration_sends_metrics_and_sleeps(
         self, pooling_manager, server_stats

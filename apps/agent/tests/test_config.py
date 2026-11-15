@@ -128,6 +128,19 @@ class TestSettings:
             assert settings.log_level.value == "WARNING"
 
     @pytest.mark.unit
+    @allure.title("Настройки игнорируют неизвестные переменные окружения [UNIT]")
+    def test_ignores_unknown_environment_variables(self, monkeypatch):
+        with allure.step("Задать неизвестную переменную окружения"):
+            monkeypatch.setenv("UNKNOWN_AGENT_SETTING", "value")
+
+        with allure.step("Создать настройки без .env файла"):
+            settings = _make_settings()
+
+        with allure.step("Проверить, что известные настройки прочитаны"):
+            assert settings.server_name == "agent-1"
+            assert not hasattr(settings, "unknown_agent_setting")
+
+    @pytest.mark.unit
     @allure.title("get_settings кэширует созданный объект настроек [UNIT]")
     def test_get_settings_is_cached(self):
         with allure.step("Сбросить кэш настроек"):

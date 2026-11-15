@@ -24,10 +24,4 @@ async def collect_metrics(stats: ServerStatsDTO,
         stats=stats_obj.metrics
     )
 
-    try:
-        return await buffer.put(bid)
-    except RedisError as err:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail='Buffer is unavailable'
-        ) from err
+
