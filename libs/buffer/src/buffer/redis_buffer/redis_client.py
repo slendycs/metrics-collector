@@ -32,6 +32,15 @@ class RedisBuffer(Buffer):
             redis_client.register_script(self._load_script('take_next'))
         )
 
+    async def ping(self) -> None:
+        """Проверяет доступность Redis."""
+        await self._redis.ping()
+    
+    
+    async def aclose(self) -> None:
+        """Закрывает пул соединений Redis."""
+        await self._redis.aclose()
+    
 
     async def put(self, bid:Bid) -> PutResult:
         """
@@ -59,7 +68,7 @@ class RedisBuffer(Buffer):
         )
 
         return PutResult(bool(accepted), slot, bid_id, bid.seq)
-
+    
 
     async def get_free_space(self) -> int:
         raise NotImplementedError

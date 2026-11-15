@@ -1,17 +1,16 @@
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import model_validator
-from typing import Optional
 
-from models import LogLevel, BufferTypes
+from models import BufferTypes, LogLevel
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 
     buffer_type: BufferTypes = BufferTypes.REDIS
-    buffer_capacity:int
-    redis_url:Optional[str]
-    log_level:LogLevel = LogLevel.INFO
+    buffer_capacity: int = Field(gt=0)
+    redis_url: str | None = None
+    log_level: LogLevel = LogLevel.INFO
 
     @model_validator(mode='after')
     def check_redis_link(self):
@@ -22,5 +21,4 @@ class Settings(BaseSettings):
         return self
 
 
-
-settings = Settings() # type: ignore
+settings = Settings()  # type: ignore

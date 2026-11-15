@@ -6,7 +6,7 @@ from models.enums import ServerTypes, LogLevel
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     server_name: str
     server_type: ServerTypes
