@@ -1,4 +1,4 @@
-from .constants import CHANNEL as CHANNEL, ID_KEY as ID_KEY, SLOTS_KEY as SLOTS_KEY
-from .scripts import load_script
+from .buffer_client import Buffer
+from .redis_buffer.redis_client import RedisBuffer
 
-__all__ = ["CHANNEL", "ID_KEY", "SLOTS_KEY", "load_script"]
+__all__ = ["Buffer", "RedisBuffer"]

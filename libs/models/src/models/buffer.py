@@ -28,7 +28,17 @@ class BidDTO(BaseModel):
     seq:int
     time_in:datetime
     stats:MetricsDTO
-    id:Optional[int] = None
+
+    def to_obj(self, bid_id:Optional[int] = None) -> Bid:
+        return Bid(
+            source_name=self.source_name,
+            source_type=self.source_type,
+            seq=self.seq,
+            time_in=self.time_in,
+            stats=self.stats.to_obj(),
+            id=bid_id
+        )
+
 
 @dataclass
 class PutResult:

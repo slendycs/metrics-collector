@@ -100,6 +100,16 @@ wheels = [
 name = "buffer"
 version = "0.1.0"
 source = { editable = "libs/buffer" }
+dependencies = [
+    { name = "models" },
+    { name = "redis" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "models", editable = "libs/models" },
+    { name = "redis", specifier = ">=8.1.0" },
+]
 
 [[package]]
 name = "certifi"
@@ -277,7 +287,6 @@ dependencies = [
     { name = "models" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "redis" },
     { name = "uvicorn" },
 ]
 
@@ -288,7 +297,6 @@ requires-dist = [
     { name = "models", editable = "libs/models" },
     { name = "pydantic", specifier = ">=2.14.3" },
     { name = "pydantic-settings", specifier = ">=2.16.2" },
-    { name = "redis", specifier = ">=8.1.0" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env")
 
     buffer_type: BufferTypes = BufferTypes.REDIS
+    buffer_capacity:int
     redis_url:Optional[str]
     log_level:LogLevel = LogLevel.INFO
 

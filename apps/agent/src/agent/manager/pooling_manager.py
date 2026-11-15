@@ -11,8 +11,9 @@ from agent.exporter import MetricsExporter
 
 
 class PoolingManager:
-    _client = Client()
-    _exporter = MetricsExporter()
+    def __init__(self) -> None:
+        self._client = Client()
+        self._exporter = MetricsExporter()
 
 
     def pooling(self) -> None:

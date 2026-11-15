@@ -2,8 +2,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends
 from models import ServerStatsDTO, Bid
 
-from intake.clients.redis_client import RedisBuffer
-from intake.clients.buffer_client import BufferClient
+
 
 intake_router = APIRouter()
 
