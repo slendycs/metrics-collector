@@ -4,9 +4,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from client import Client
-from exporter import MetricsExporter
-from manager import PoolingManager
+from agent.client import Client
+from agent.exporter import MetricsExporter
+from agent.manager import PoolingManager
 
 
 @pytest.fixture

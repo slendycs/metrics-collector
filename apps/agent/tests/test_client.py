@@ -22,11 +22,11 @@ class TestClient:
         with allure.step("Отправить пакет метрик через POST"):
             with (
                 patch(
-                    "client.metrics_send_client.get_settings",
+                    "agent.client.metrics_send_client.get_settings",
                     return_value=settings,
                 ),
                 patch(
-                    "client.metrics_send_client.requests.post", return_value=response
+                    "agent.client.metrics_send_client.requests.post", return_value=response
                 ) as post,
             ):
                 client.post(server_stats)
@@ -44,11 +44,11 @@ class TestClient:
         with allure.step("Отправить пакет метрик через POST"):
             with (
                 patch(
-                    "client.metrics_send_client.get_settings",
+                    "agent.client.metrics_send_client.get_settings",
                     return_value=settings,
                 ),
                 patch(
-                    "client.metrics_send_client.requests.post", return_value=response
+                    "agent.client.metrics_send_client.requests.post", return_value=response
                 ) as post,
             ):
                 client.post(server_stats)
@@ -79,7 +79,7 @@ class TestClient:
         with allure.step("Отправить метрики и ожидать исключение"):
             with (
                 patch(
-                    "client.metrics_send_client.requests.post", return_value=response
+                    "agent.client.metrics_send_client.requests.post", return_value=response
                 ),
                 pytest.raises(requests.HTTPError, match="500 Server Error"),
             ):
@@ -94,7 +94,7 @@ class TestClient:
         with allure.step("Отправить метрики и ожидать исключение"):
             with (
                 patch(
-                    "client.metrics_send_client.requests.post", side_effect=error
+                    "agent.client.metrics_send_client.requests.post", side_effect=error
                 ),
                 pytest.raises(requests.ConnectionError, match="connection refused"),
             ):
@@ -109,7 +109,7 @@ class TestClient:
 
         with allure.step("Отправить пакет метрик"):
             with patch(
-                "client.metrics_send_client.get_settings", return_value=settings
+                "agent.client.metrics_send_client.get_settings", return_value=settings
             ):
                 client.post(server_stats)
 
@@ -136,7 +136,7 @@ class TestClient:
         with allure.step("Отправить метрики и ожидать HTTPError"):
             with (
                 patch(
-                    "client.metrics_send_client.get_settings", return_value=settings
+                    "agent.client.metrics_send_client.get_settings", return_value=settings
                 ),
                 pytest.raises(requests.HTTPError),
             ):

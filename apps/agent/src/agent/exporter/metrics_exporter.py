@@ -2,7 +2,7 @@ import psutil
 import time
 from datetime import datetime
 
-from config import get_settings
+from ..config import get_settings
 from models import ServerStats, Metrics
 
 

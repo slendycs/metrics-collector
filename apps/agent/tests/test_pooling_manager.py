@@ -6,9 +6,9 @@ import pytest
 from pydantic import ValidationError
 from requests import HTTPError
 
-from client import Client
-from exporter import MetricsExporter
-from manager import PoolingManager
+from agent.client import Client
+from agent.exporter import MetricsExporter
+from agent.manager import PoolingManager
 
 
 class _StopPooling(Exception):
@@ -45,10 +45,10 @@ def _run_single_iteration(
     with allure.step("Выполнить одну итерацию цикла опроса"):
         with (
             patch(
-                "manager.pooling_manager.get_settings", return_value=settings
+                "agent.manager.pooling_manager.get_settings", return_value=settings
             ),
             patch(
-                "manager.pooling_manager.sleep", side_effect=_StopPooling
+                "agent.manager.pooling_manager.sleep", side_effect=_StopPooling
             ) as sleep_mock,
         ):
             with pytest.raises(_StopPooling):
@@ -64,7 +64,7 @@ class TestPoolingManager:
         self, pooling_manager, server_stats
     ):
         with allure.step("Перехватить логгер"):
-            with patch("manager.pooling_manager.logger") as logger_mock:
+            with patch("agent.manager.pooling_manager.logger") as logger_mock:
                 sleep_mock = _run_single_iteration(
                     pooling_manager, collect_result=server_stats
                 )
@@ -91,7 +91,7 @@ class TestPoolingManager:
             error = HTTPError("500 Server Error")
 
         with allure.step("Выполнить итерацию с перехватом логгера"):
-            with patch("manager.pooling_manager.logger") as logger_mock:
+            with patch("agent.manager.pooling_manager.logger") as logger_mock:
                 sleep_mock = _run_single_iteration(
                     pooling_manager,
                     collect_result=server_stats,
@@ -124,7 +124,7 @@ class TestPoolingManager:
         self, pooling_manager, error, error_name
     ):
         with allure.step("Выполнить итерацию с ошибкой сбора метрик"):
-            with patch("manager.pooling_manager.logger") as logger_mock:
+            with patch("agent.manager.pooling_manager.logger") as logger_mock:
                 sleep_mock = _run_single_iteration(
                     pooling_manager, collect_effect=error
                 )
@@ -155,7 +155,7 @@ class TestPoolingManager:
         self, pooling_manager, error, error_name
     ):
         with allure.step("Выполнить итерацию с системной ошибкой"):
-            with patch("manager.pooling_manager.logger") as logger_mock:
+            with patch("agent.manager.pooling_manager.logger") as logger_mock:
                 sleep_mock = _run_single_iteration(
                     pooling_manager, collect_effect=error
                 )
@@ -180,9 +180,9 @@ class TestPoolingManager:
 
         with allure.step("Перехватить логгер и sleep"):
             with (
-                patch("manager.pooling_manager.logger") as logger_mock,
+                patch("agent.manager.pooling_manager.logger") as logger_mock,
                 patch(
-                    "manager.pooling_manager.sleep", side_effect=_StopPooling
+                    "agent.manager.pooling_manager.sleep", side_effect=_StopPooling
                 ) as sleep_mock,
             ):
                 with allure.step("Ожидать проброс RuntimeError"):
@@ -198,7 +198,7 @@ class TestPoolingManager:
     @allure.title("sleep использует настроенный диапазон таймаутов [UNIT]")
     def test_sleep_uses_configured_timeout_range(self, pooling_manager, server_stats):
         with allure.step("Перехватить логгер"):
-            with patch("manager.pooling_manager.logger"):
+            with patch("agent.manager.pooling_manager.logger"):
                 sleep_mock = _run_single_iteration(
                     pooling_manager,
                     collect_result=server_stats,
@@ -235,14 +235,14 @@ class TestPoolingManager:
         with allure.step("Выполнить одну итерацию цикла"):
             with (
                 patch(
-                    "client.metrics_send_client.get_settings",
+                    "agent.client.metrics_send_client.get_settings",
                     return_value=client_settings,
                 ),
                 patch(
-                    "manager.pooling_manager.get_settings",
+                    "agent.manager.pooling_manager.get_settings",
                     return_value=manager_settings,
                 ),
-                patch("manager.pooling_manager.sleep", side_effect=_StopPooling),
+                patch("agent.manager.pooling_manager.sleep", side_effect=_StopPooling),
             ):
                 with pytest.raises(_StopPooling):
                     pooling_manager.pooling()

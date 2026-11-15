@@ -268,6 +268,8 @@ source = { editable = "apps/intake" }
 dependencies = [
     { name = "fastapi" },
     { name = "models" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
     { name = "uvicorn" },
 ]
 
@@ -275,6 +277,8 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.162.4" },
     { name = "models", editable = "libs/models" },
+    { name = "pydantic", specifier = ">=2.14.3" },
+    { name = "pydantic-settings", specifier = ">=2.16.2" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 

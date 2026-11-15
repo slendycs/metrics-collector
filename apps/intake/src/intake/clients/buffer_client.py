@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 from models import Bid, PutResult
 
+
 class BufferClient(ABC):
     @abstractmethod
     async def put(self, bid:Bid) -> PutResult: ...

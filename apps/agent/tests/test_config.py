@@ -2,8 +2,8 @@ import allure
 import pytest
 from pydantic import ValidationError
 
-from config import get_settings
-from config.config import Settings
+from agent.config import get_settings
+from agent.config.config import Settings
 
 
 def _make_settings(**overrides) -> Settings:

@@ -15,8 +15,8 @@ wheels/
 .vscode/
 .opencode/
 pyrightconfig.json
+docker-compose.yml
 
 # Test reports
 allure-results/
 allure-report/
-

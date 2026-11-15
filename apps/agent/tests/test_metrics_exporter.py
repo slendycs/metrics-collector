@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import allure
 import pytest
 
-from exporter import MetricsExporter
+from agent.exporter import MetricsExporter
 from models import ServerStats
 from models.enums import ServerTypes
 
@@ -33,26 +33,26 @@ def _collect_many(exporter, *, times: int) -> list[ServerStats]:
         settings = MagicMock(server_name="node-7", server_type=ServerTypes.PRODUCTION)
         with (
             patch(
-                "exporter.metrics_exporter.get_settings",
+                "agent.exporter.metrics_exporter.get_settings",
                 return_value=settings,
             ),
             patch(
-                "exporter.metrics_exporter.psutil.disk_io_counters",
+                "agent.exporter.metrics_exporter.psutil.disk_io_counters",
                 side_effect=counters,
             ),
             patch(
-                "exporter.metrics_exporter.psutil.cpu_percent", return_value=10.0
+                "agent.exporter.metrics_exporter.psutil.cpu_percent", return_value=10.0
             ),
             patch(
-                "exporter.metrics_exporter.psutil.virtual_memory",
+                "agent.exporter.metrics_exporter.psutil.virtual_memory",
                 return_value=MagicMock(percent=20.0),
             ),
             patch(
-                "exporter.metrics_exporter.psutil.getloadavg",
+                "agent.exporter.metrics_exporter.psutil.getloadavg",
                 return_value=(0.1, 0.2, 0.3),
             ),
             patch(
-                "exporter.metrics_exporter.time.monotonic",
+                "agent.exporter.metrics_exporter.time.monotonic",
                 side_effect=monotonic_values,
             ),
         ):
@@ -65,7 +65,7 @@ class TestMetricsExporter:
     def test_read_disk_bytes_returns_zero_when_psutil_has_no_counters(self, exporter):
         with allure.step("Смоделировать отсутствие счётчиков в psutil"):
             with patch(
-                "exporter.metrics_exporter.psutil.disk_io_counters", return_value=None
+                "agent.exporter.metrics_exporter.psutil.disk_io_counters", return_value=None
             ):
                 with allure.step("Прочитать счётчики диска"):
                     result = exporter._read_disk_bytes()
@@ -80,7 +80,7 @@ class TestMetricsExporter:
 
         with allure.step("Смоделировать счётчики psutil"):
             with patch(
-                "exporter.metrics_exporter.psutil.disk_io_counters",
+                "agent.exporter.metrics_exporter.psutil.disk_io_counters",
                 return_value=counters,
             ) as disk_io_counters:
                 with allure.step("Прочитать счётчики диска"):
@@ -104,26 +104,26 @@ class TestMetricsExporter:
         with allure.step("Собрать метрики с моками psutil"):
             with (
                 patch(
-                    "exporter.metrics_exporter.get_settings",
+                    "agent.exporter.metrics_exporter.get_settings",
                     return_value=settings,
                 ),
                 patch(
-                    "exporter.metrics_exporter.psutil.disk_io_counters",
+                    "agent.exporter.metrics_exporter.psutil.disk_io_counters",
                     side_effect=[before, after],
                 ),
                 patch(
-                    "exporter.metrics_exporter.psutil.cpu_percent", return_value=55.5
+                    "agent.exporter.metrics_exporter.psutil.cpu_percent", return_value=55.5
                 ) as cpu_percent,
                 patch(
-                    "exporter.metrics_exporter.psutil.virtual_memory",
+                    "agent.exporter.metrics_exporter.psutil.virtual_memory",
                     return_value=MagicMock(percent=61.2),
                 ),
                 patch(
-                    "exporter.metrics_exporter.psutil.getloadavg",
+                    "agent.exporter.metrics_exporter.psutil.getloadavg",
                     return_value=(1.1, 2.2, 3.3),
                 ),
                 patch(
-                    "exporter.metrics_exporter.time.monotonic",
+                    "agent.exporter.metrics_exporter.time.monotonic",
                     side_effect=[10.0, 11.0],
                 ),
             ):
@@ -154,22 +154,22 @@ class TestMetricsExporter:
         with allure.step("Собрать метрики с моками psutil"):
             with (
                 patch(
-                    "exporter.metrics_exporter.psutil.disk_io_counters",
+                    "agent.exporter.metrics_exporter.psutil.disk_io_counters",
                     side_effect=[before, after],
                 ),
                 patch(
-                    "exporter.metrics_exporter.psutil.cpu_percent", return_value=1.0
+                    "agent.exporter.metrics_exporter.psutil.cpu_percent", return_value=1.0
                 ),
                 patch(
-                    "exporter.metrics_exporter.psutil.virtual_memory",
+                    "agent.exporter.metrics_exporter.psutil.virtual_memory",
                     return_value=MagicMock(percent=2.0),
                 ),
                 patch(
-                    "exporter.metrics_exporter.psutil.getloadavg",
+                    "agent.exporter.metrics_exporter.psutil.getloadavg",
                     return_value=(0.0, 0.0, 0.0),
                 ),
                 patch(
-                    "exporter.metrics_exporter.time.monotonic",
+                    "agent.exporter.metrics_exporter.time.monotonic",
                     side_effect=[0.0, 1.0],
                 ),
             ):
