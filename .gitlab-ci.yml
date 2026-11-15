@@ -9,9 +9,14 @@ run-tests:
   image: ghcr.io/astral-sh/uv:python$PYTHON_VERSION-trixie
   allow_failure: true
 
+  services:
+    - name: redis:7-alpine
+      alias: redis
+
   variables:
     UV_CACHE_DIR: .uv-cache
     UV_LINK_MODE: copy
+    TEST_REDIS_URL: redis://redis:6379/15
   
   cache:
     - key:
@@ -19,7 +24,7 @@ run-tests:
           - uv.lock
       paths:
         - $UV_CACHE_DIR
-
+        
   before_script:
     - uv sync --all-packages --frozen --all-extras
 

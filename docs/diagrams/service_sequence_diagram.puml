@@ -24,26 +24,27 @@ DV -> DV : _try_dispatch()\n(триггер: новый воркер)
 
 note over AG, ST : Триггер А: срабатывание таймера агента
 loop Пока агент работает (ИБ, бесконечный источник)
-    AG -> AG : collect() → ServerStats\n(server_name, server_type, metrics)
+    AG -> AG : collect() → ServerStats\n(server_name, server_type, seq = ++_seq, metrics)
     AG -> DP : POST /collect(ServerStats)
-    DP -> DP : bid = Bid(source_name, source_type,\n t_in = now, stats), id и seq пока пусты
-    DP -> BUF : put(bid)
+    DP -> DP : bid = Bid(source_name, source_type,\n time_in = now, stats = metrics),\nid пока пуст (seq остаётся в ServerStats)
+    DP -> BUF : put(bid, seq)
     note over BUF : Lua put_bid (атомарно)
-    note over BUF : INCR bid:id (глобальный)\nи seq:{source_name} (номер заявки от источника)
+    note over BUF : INCR buffer:bid_id (глобальный id).\nRedis seq не считает и не хранит, его ведёт агент
     note over BUF : Блокировки в ДП не нужны,\nработает при нескольких экземплярах ДП
     note over BUF : Д1ОЗ3 - первое свободное место\nот начала буфера, без сдвига, указателя нет
     BUF --> DP : PutResult(accepted, slot, bid_id, seq)
-    DP -> DP : bid.id = bid_id, bid.seq = seq
-    DP ->> ST : POST /webhooks/new(bid, slot)
-    note over ST : mark_start(at) при первой заявке,\ngenerated += 1
+    note over DP, BUF : Lua возвращает только accepted, slot и bid_id,\nа seq клиент буфера подставляет из аргумента put
+    DP -> DP : bid.id = bid_id
+    DP ->> ST : POST /webhooks/new(bid, seq, slot)
+    note over ST : mark_start(at) при первой заявке,\ngenerated += 1,\nзапоминает соответствие bid_id → seq
     alt Есть свободное место
         note over DP, BUF : accepted = True, slot занят
         BUF ->> DV : PUBLISH buffer_updated (триггер Б1)
     else Буфер полон (отказ, Д1ОО5)
-        note over DP, BUF : accepted = False, slot = None,\nid и seq всё равно выданы
+        note over DP, BUF : accepted = False, slot = None,\nid всё равно выдан
         note over DP, BUF : Буфер и заявки в нём не меняются,\nвыбивания нет
         note over DP, BUF : Пакет потерян, следующий придёт\nпо таймеру агента
-        DP ->> ST : POST /webhooks/reject(bid)
+        DP ->> ST : POST /webhooks/reject(bid, seq)
         note over ST : reject += 1, mark_end(at)
     end
     DP --> AG : 202 Accepted\n(всегда, агент об отказе не знает)
@@ -74,11 +75,12 @@ loop Пока есть свободный воркер и заявка в буф
             DV -> W : POST /process(bid)
             alt Воркер принял заявку
                 W --> DV : 202 Accepted
-                DV ->> ST : POST /task-status(bid, taken, worker_id, slot,\n t_ож = now - bid.t_in, at)
+                DV ->> ST : POST /task-status(bid, taken, worker_id, slot,\n t_ож = now - bid.time_in, at)
+                note over ST : seq события берётся по bid.id\nиз соответствия bid_id → seq, ДВ seq не знает
             else Воркер занят (409) или недоступен (сеть, 5xx)
                 W --> DV : 409 Conflict или ответа нет
                 DV -> BUF : requeue(bid)
-                note over BUF : Lua return_bid - первое свободное место,\nid, seq и t_in сохраняются
+                note over BUF : Lua return_bid - первое свободное место,\nid и payload (включая time_in) сохраняются, PUBLISH нет
                 alt Место в буфере есть
                     BUF --> DV : True
                     note over DV : Заявка снова в очереди,\nвремя ожидания продолжает копиться

@@ -17,6 +17,7 @@ namespace Agent {
         -str _server_name
         -str _server_type
         -int _measuring_count
+        -int _seq
         +get_cpu_load() float
         +get_ram_load() float
         +get_disk_read() int
@@ -50,21 +51,21 @@ namespace Common {
     class ServerStats <<dataclass>> {
         +str server_name
         +str server_type
+        +int seq
         +Metrics metrics
     }
     class Bid <<dataclass>> {
-        +int id
+        +Optional<int> id
         +str source_name
         +str source_type
-        +int seq
-        +datetime t_in
-        +ServerStats stats
+        +datetime time_in
+        +Metrics stats
     }
     class PutResult <<dataclass>> {
         +bool accepted
-        +Optional<int> slot
         +int bid_id
         +int seq
+        +Optional<int> slot
     }
     class TakeResult <<dataclass>> {
         +Bid bid
@@ -74,32 +75,62 @@ namespace Common {
 
 namespace ReceptionService {
     class ReceptionApp <<FastAPI>> {
-        +collect_metrics(metrics: ServerStatsModel, buffer: BufferClient, stats: StatsClient) None
+        +collect_metrics(stats: ServerStatsDTO, buffer: Buffer, stats_client: ReceptionStatsClient) None
+        +lifespan(app: FastAPI) None
+        +get_buffer(request: Request) Buffer
+        +create_buffer() Buffer
     }
     class ReceptionConfig {
+        +BufferTypes buffer_type
         +str redis_url
-        +str stats_server_url
         +int buffer_capacity
-    }
-    class ReceptionBufferClient {
-        -str _redis_url
-        -str _PUT_SCRIPT
-        +put(bid: Bid) PutResult
-        +get_free_space() int
+        +str stats_server_url
     }
     class ReceptionStatsClient {
         -str _stats_server_url
         -str _NEW_WEBHOOK_ENDPOINT
         -str _REJECTED_WEBHOOK_ENDPOINT
-        +notify(notification_type: str, bid: Bid, slot: int) None
+        +notify(notification_type: str, bid: Bid, result: PutResult) None
     }
 }
 
-class BufferRedis <<Redis + Lua>> {
-    slots : hash ограниченной ёмкости buffer_capacity
-    put_bid : атомарно INCR id и seq, затем Д1ОЗ3 первое свободное место от начала
-    take_next : Д2Б4 приоритет по source_type, при равных max(id), слот освобождается
-    return_bid : возврат заявки на первое свободное место, id и seq и t_in сохраняются
+namespace BufferLib {
+    abstract class Buffer {
+        +put(bid: Bid, seq: int) PutResult
+        +get_free_space() int
+        +pull() TakeResult
+        +requeue(bid: Bid) bool
+        +subscribe(callback) None
+        +ping() None
+        +aclose() None
+    }
+    class RedisBuffer {
+        -Redis _redis
+        -int _capacity
+        -str _SLOTS_KEY
+        -str _ID_KEY
+        -str _CHANNEL
+        -Script _put_script
+        -Script _return_script
+        -Script _take_next_script
+        +put(bid: Bid, seq: int) PutResult
+        +get_free_space() int
+        +pull() TakeResult
+        +requeue(bid: Bid) bool
+        +subscribe(callback) None
+        +ping() None
+        +aclose() None
+        -_load_script(name: str) str
+        -_register_scripts(redis_client: Redis) tuple
+    }
+}
+
+class RedisServer <<Redis + Lua>> {
+    buffer:slots : hash слот → конверт (id, prio, payload), не больше buffer_capacity мест
+    buffer:bid_id : глобальный счётчик id заявок
+    put_bid : атомарно INCR id (seq Redis не считает и не хранит), затем Д1ОЗ3 первое свободное место от начала, PUBLISH buffer_updated
+    take_next : Д2Б4 приоритет prio по source_type, при равных max(id), слот освобождается
+    return_bid : возврат заявки на первое свободное место, id и payload сохраняются, без PUBLISH
     buffer_updated : Pub/Sub канал
 }
 
@@ -109,22 +140,16 @@ namespace WorkerDispatcher {
         +update_status(worker_id: int, task_id: int, status: WorkerStatus, t_service: float, manager: WorkerManager) None
     }
     class DispatcherConfig {
+        +BufferTypes buffer_type
         +str redis_url
+        +int buffer_capacity
         +str stats_server_url
         +float watchdog_interval
         +float task_timeout
     }
-    class DispatcherBufferClient {
-        -str _redis_url
-        -str _TAKE_SCRIPT
-        -str _RETURN_SCRIPT
-        +pull() TakeResult
-        +requeue(bid: Bid) bool
-        +subscribe(callback) None
-    }
     class WorkerManager {
         -list<WorkerClient> _workers
-        -DispatcherBufferClient _buffer_client
+        -Buffer _buffer
         -DispatcherStatsClient _stats_client
         -Lock _lock
         -float _watchdog_interval
@@ -216,6 +241,7 @@ namespace StatisticsService {
     class StatsCollector {
         -dict<str, SourceStats> _sources
         -dict<int, WorkerStats> _workers
+        -dict<int, int> _seq_by_bid
         -EventLog _timeline
         -PrecisionChecker _precision
         -datetime _t_start
@@ -230,6 +256,7 @@ namespace StatisticsService {
         +summary() Summary
         +precision() PrecisionReport
         +reset() None
+        -_seq_of(bid_id: int, known: Optional<int>) int
     }
     class SourceStats {
         -int _generated
@@ -270,10 +297,12 @@ namespace StatisticsService {
     }
     class NewEvent <<BaseModel>> {
         +Bid bid
+        +int seq
         +Optional<int> slot
     }
     class RejectEvent <<BaseModel>> {
         +Bid bid
+        +Optional<int> seq
     }
     class TaskStatusEvent <<BaseModel>> {
         +Bid bid
@@ -327,33 +356,34 @@ AgentConfig ..> Client : reception_service_url
 PollingManager --> MetricsExporter : _exporter, запрос метрик от ОС
 PollingManager --> Client : _client, ServerStats
 Client ..> PollingManager : Exception при ошибках сети
-MetricsExporter ..> ServerStats : создаёт
+MetricsExporter ..> ServerStats : создаёт, номер seq берёт из _seq
 ServerStats *-- Metrics
 Client ..> ReceptionApp : HTTP POST /collect
 
 ' Reception service
-ReceptionApp ..> ReceptionBufferClient : Depends(get_buffer), put(bid)
-ReceptionApp ..> ReceptionStatsClient : Depends(get_stats), notify
-ReceptionApp ..> Bid : создаёт, затем записывает id и seq из PutResult
-ReceptionConfig ..> ReceptionBufferClient : redis_url, buffer_capacity
+ReceptionApp ..> Buffer : Depends(get_buffer), put(bid, seq)
+ReceptionApp ..> ReceptionStatsClient : Depends(get_stats), notify(type, bid, PutResult)
+ReceptionApp ..> Bid : создаёт без id, затем записывает id из PutResult
+ReceptionConfig ..> RedisBuffer : buffer_type, redis_url, buffer_capacity (create_buffer)
 ReceptionConfig ..> ReceptionStatsClient : stats_server_url
-ReceptionBufferClient ..> PutResult : возвращает
-ReceptionBufferClient ..> BufferRedis : EVAL put_bid, PUBLISH buffer_updated
-Bid *-- ServerStats
+Buffer ..> PutResult : возвращает
+ReceptionStatsClient ..> PutResult : seq и slot для вебхука new
+RedisBuffer ..|> Buffer : реализует
+RedisBuffer ..> RedisServer : EVAL put_bid, take_next, return_bid и SUBSCRIBE buffer_updated
+Bid *-- Metrics
 
 ' Worker dispatcher
 DispatcherApp ..> WorkerManager : Depends(get_manager)
-DispatcherConfig ..> DispatcherBufferClient : redis_url
+DispatcherConfig ..> RedisBuffer : buffer_type, redis_url, buffer_capacity
 DispatcherConfig ..> DispatcherStatsClient : stats_server_url
 DispatcherConfig ..> WorkerManager : watchdog_interval, task_timeout
-WorkerManager --> DispatcherBufferClient : _buffer_client
+WorkerManager --> Buffer : _buffer
 WorkerManager --> DispatcherStatsClient : _stats_client
 WorkerManager o-- WorkerClient : _workers
 WorkerClient --> WorkerStatus : status
 WorkerClient ..> Bid : current_bid
-DispatcherBufferClient ..> TakeResult : возвращает
-DispatcherBufferClient ..> BufferRedis : EVAL take_next и return_bid, subscribe
-BufferRedis ..> DispatcherBufferClient : Pub/Sub buffer_updated
+Buffer ..> TakeResult : возвращает
+RedisServer ..> RedisBuffer : Pub/Sub buffer_updated
 
 ' Worker
 WorkerClient ..> WorkerApp : POST /process, bool по 202 или 409 и ошибке
