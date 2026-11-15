@@ -13,8 +13,8 @@ from models.enums import ServerTypes
 class _StubBuffer(Buffer):
     """Minimal Buffer implementation to exercise the default methods."""
 
-    async def put(self, bid: Bid) -> PutResult:
-        return PutResult(True, 1, 1, bid.seq)
+    async def put(self, bid: Bid, seq: int) -> PutResult:
+        return PutResult(accepted=True, bid_id=1, seq=seq, slot=1)
 
     async def get_free_space(self) -> int:
         return 0
@@ -81,7 +81,7 @@ class TestRedisBuffer:
             scripts["put_bid"].return_value = [1, 2, 42]
 
         with allure.step("Поставить заявку в буфер"):
-            result = await redis_buffer.put(bid)
+            result = await redis_buffer.put(bid, 7)
 
         with allure.step("Проверить вызов скрипта с ключами и аргументами"):
             scripts["put_bid"].assert_awaited_once_with(
@@ -90,7 +90,7 @@ class TestRedisBuffer:
             )
 
         with allure.step("Проверить результат постановки"):
-            assert result == PutResult(True, 2, 42, bid.seq)
+            assert result == PutResult(accepted=True, bid_id=42, seq=7, slot=2)
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -100,13 +100,13 @@ class TestRedisBuffer:
             scripts["put_bid"].return_value = [0, -1, 17]
 
         with allure.step("Поставить заявку в заполненный буфер"):
-            result = await redis_buffer.put(bid)
+            result = await redis_buffer.put(bid, 7)
 
         with allure.step("Проверить отказ и номер заявки"):
             assert result.accepted is False
-            assert result.slot == -1
+            assert result.slot is None
             assert result.bid_id == 17
-            assert result.seq == bid.seq
+            assert result.seq == 7
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -116,12 +116,13 @@ class TestRedisBuffer:
             scripts["put_bid"].return_value = [1, "3", "8"]
 
         with allure.step("Поставить заявку в буфер"):
-            result = await redis_buffer.put(bid)
+            result = await redis_buffer.put(bid, 7)
 
         with allure.step("Проверить приведённые значения"):
             assert result.accepted is True
-            assert result.slot == "3"
-            assert result.bid_id == "8"
+            assert result.slot == 3
+            assert result.bid_id == 8
+            assert result.seq == 7
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -134,7 +135,7 @@ class TestRedisBuffer:
 
         with allure.step("Попытаться поставить заявку"):
             with pytest.raises(ValidationError):
-                await redis_buffer.put(bid)
+                await redis_buffer.put(bid, 7)
 
         with allure.step("Проверить, что Lua-скрипт не вызывался"):
             scripts["put_bid"].assert_not_awaited()
@@ -148,7 +149,7 @@ class TestRedisBuffer:
 
         with allure.step("Поставить заявку и ожидать исключение"):
             with pytest.raises(RedisError, match="connection lost"):
-                await redis_buffer.put(bid)
+                await redis_buffer.put(bid, 7)
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -206,10 +207,10 @@ class TestRedisBuffer:
     ):
         with allure.step("Создать буфер с реальным Redis и поставить заявку"):
             buffer = real_buffer_factory(capacity=2)
-            result = await buffer.put(bid)
+            result = await buffer.put(bid, 7)
 
         with allure.step("Проверить результат постановки"):
-            assert result == PutResult(True, 1, 1, bid.seq)
+            assert result == PutResult(accepted=True, bid_id=1, seq=7, slot=1)
 
         with allure.step("Проверить слот и счётчик заявок в Redis"):
             raw_envelope = await real_redis.hget("buffer:slots", "1")
@@ -234,18 +235,18 @@ class TestRedisBuffer:
     ):
         with allure.step("Заполнить буфер ёмкостью 2 двумя заявками"):
             buffer = real_buffer_factory(capacity=2)
-            first = await buffer.put(bid_factory(seq=1))
-            second = await buffer.put(bid_factory(seq=2))
+            first = await buffer.put(bid_factory(), 1)
+            second = await buffer.put(bid_factory(), 2)
 
         with allure.step("Поставить третью заявку в заполненный буфер"):
-            rejected = await buffer.put(bid_factory(seq=3))
+            rejected = await buffer.put(bid_factory(), 3)
 
         with allure.step("Проверить успешные постановки и отказ"):
             assert (first.accepted, first.slot, first.bid_id) == (True, 1, 1)
             assert (second.accepted, second.slot, second.bid_id) == (True, 2, 2)
             assert (rejected.accepted, rejected.slot, rejected.bid_id) == (
                 False,
-                -1,
+                None,
                 3,
             )
 
@@ -261,14 +262,14 @@ class TestRedisBuffer:
     ):
         with allure.step("Занять оба слота буфера"):
             buffer = real_buffer_factory(capacity=2)
-            await buffer.put(bid_factory(seq=1))
-            await buffer.put(bid_factory(seq=2))
+            await buffer.put(bid_factory(), 1)
+            await buffer.put(bid_factory(), 2)
 
         with allure.step("Освободить первый слот"):
             await real_redis.hdel("buffer:slots", "1")
 
         with allure.step("Поставить новую заявку"):
-            result = await buffer.put(bid_factory(seq=3))
+            result = await buffer.put(bid_factory(), 3)
 
         with allure.step("Проверить повторное использование первого слота"):
             assert (result.accepted, result.slot, result.bid_id) == (True, 1, 3)
@@ -289,7 +290,7 @@ class TestRedisBuffer:
     ):
         with allure.step("Поставить заявку от источника с заданным типом"):
             buffer = real_buffer_factory(capacity=1)
-            await buffer.put(bid_factory(source_type=source_type))
+            await buffer.put(bid_factory(source_type=source_type), 7)
 
         with allure.step("Прочитать приоритет из конверта в Redis"):
             raw_envelope = await real_redis.hget("buffer:slots", "1")

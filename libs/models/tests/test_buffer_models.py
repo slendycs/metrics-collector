@@ -26,16 +26,18 @@ class TestBufferModels:
             assert str(BufferTypes.REDIS) == "REDIS"
 
     @pytest.mark.unit
-    @allure.title("Bid сохраняет переданные поля и id по умолчанию равен None [UNIT]")
+    @allure.title("Bid сохраняет переданные поля без seq и id по умолчанию None [UNIT]")
     def test_bid_keeps_fields(self, bid):
         with allure.step("Проверить поля Bid"):
             assert bid.source_name == "agent-1"
             assert bid.source_type is ServerTypes.TEST
-            assert bid.seq == 7
             assert bid.time_in == datetime(2026, 1, 1, 12, 0, 0)
             assert isinstance(bid.stats, Metrics)
             assert bid.stats.cpu_load == 12.5
             assert bid.id is None
+
+        with allure.step("Проверить отсутствие поля seq у Bid"):
+            assert "seq" not in bid.__dataclass_fields__
 
     @pytest.mark.unit
     @allure.title("Bid принимает явный id заявки [UNIT]")
@@ -55,20 +57,20 @@ class TestBufferModels:
         with allure.step("Проверить поля DTO"):
             assert dto.source_name == bid.source_name
             assert dto.source_type is bid.source_type
-            assert dto.seq == bid.seq
             assert dto.time_in == bid.time_in
             assert dto.stats.cpu_load == bid.stats.cpu_load
             assert dto.stats.timestamp == bid.stats.timestamp
 
     @pytest.mark.unit
-    @allure.title("BidDTO не содержит id заявки [UNIT]")
+    @allure.title("BidDTO не содержит полей id и seq [UNIT]")
     def test_bid_dto_has_no_id_field(self, bid):
         with allure.step("Преобразовать Bid с id в BidDTO"):
             bid.id = 9
             dto = BidDTO.model_validate(bid)
 
-        with allure.step("Проверить отсутствие поля id"):
+        with allure.step("Проверить отсутствие полей id и seq"):
             assert "id" not in dto.model_dump()
+            assert "seq" not in dto.model_dump()
 
     @pytest.mark.unit
     @allure.title("BidDTO отклоняет неизвестный тип источника [UNIT]")
@@ -100,7 +102,7 @@ class TestBufferModels:
 
         with allure.step("Попытаться изменить поле DTO"):
             with pytest.raises(ValidationError):
-                dto.seq = 2
+                dto.source_name = "other"
 
     @pytest.mark.unit
     @allure.title("BidDTO сериализует заявку в JSON-строку [UNIT]")
@@ -111,7 +113,6 @@ class TestBufferModels:
         with allure.step("Проверить ключевые поля JSON"):
             assert '"source_name":"agent-1"' in payload
             assert '"source_type":"test"' in payload
-            assert '"seq":7' in payload
 
     @pytest.mark.unit
     @allure.title("BidDTO.to_obj восстанавливает Bid с переданным id [UNIT]")
@@ -124,7 +125,6 @@ class TestBufferModels:
             assert isinstance(restored, Bid)
             assert restored.source_name == bid.source_name
             assert restored.source_type is bid.source_type
-            assert restored.seq == bid.seq
             assert restored.time_in == bid.time_in
             assert restored.id == 33
 
@@ -147,9 +147,9 @@ class TestBufferModels:
     def test_put_result_keeps_fields(self, put_result):
         with allure.step("Проверить поля PutResult"):
             assert put_result.accepted is True
-            assert put_result.slot == 1
             assert put_result.bid_id == 42
             assert put_result.seq == 7
+            assert put_result.slot == 1
 
     @pytest.mark.unit
     @allure.title("PutResultDTO собирается из PutResult [UNIT]")
@@ -159,22 +159,22 @@ class TestBufferModels:
 
         with allure.step("Сравнить поля DTO и исходной модели"):
             assert dto.accepted is put_result.accepted
-            assert dto.slot == put_result.slot
             assert dto.bid_id == put_result.bid_id
             assert dto.seq == put_result.seq
+            assert dto.slot == put_result.slot
 
     @pytest.mark.unit
-    @allure.title("PutResultDTO сериализуется в JSON-совместимый dict [UNIT]")
+    @allure.title("PutResultDTO сериализует отказ со slot=None [UNIT]")
     def test_put_result_dto_serializes(self, put_result_factory):
-        with allure.step("Создать отказ с slot=-1 и сериализовать его"):
+        with allure.step("Создать отказ со slot=None и сериализовать его"):
             payload = PutResultDTO.model_validate(
-                put_result_factory(accepted=False, slot=-1)
+                put_result_factory(accepted=False, slot=None)
             ).model_dump(mode="json")
 
         with allure.step("Проверить поля payload"):
             assert payload == {
                 "accepted": False,
-                "slot": -1,
                 "bid_id": 42,
                 "seq": 7,
+                "slot": None,
             }

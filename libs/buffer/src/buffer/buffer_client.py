@@ -7,7 +7,7 @@ class Buffer(ABC):
     """Интерфейс для работы с буферами"""
 
     @abstractmethod
-    async def put(self, bid: Bid) -> PutResult:
+    async def put(self, bid: Bid, seq: int) -> PutResult:
         """Добавляет заявку в буфер задач"""
 
     @abstractmethod

@@ -11,7 +11,6 @@ from .metrics import Metrics, MetricsDTO
 class Bid:
     source_name:str # Имя сервера
     source_type:ServerTypes # Тип сервера
-    seq:int # Порядковый номер заявки внутри источника
     time_in:datetime # Время поступления заявки
     stats:Metrics # Пакет метрик
     id:Optional[int] = None # id заявки (назначается Redis)
@@ -25,7 +24,6 @@ class BidDTO(BaseModel):
 
     source_name:str
     source_type:ServerTypes
-    seq:int
     time_in:datetime
     stats:MetricsDTO
 
@@ -33,7 +31,6 @@ class BidDTO(BaseModel):
         return Bid(
             source_name=self.source_name,
             source_type=self.source_type,
-            seq=self.seq,
             time_in=self.time_in,
             stats=self.stats.to_obj(),
             id=bid_id
@@ -43,9 +40,9 @@ class BidDTO(BaseModel):
 @dataclass
 class PutResult:
     accepted:bool # Статус заявки 
-    slot:int # Номер места в буфере
     bid_id:int # id заявки
     seq:int # Порядковый номер заявки от источника
+    slot:Optional[int] = None # Номер места в буфере
 
 
 class PutResultDTO(BaseModel):
@@ -55,6 +52,6 @@ class PutResultDTO(BaseModel):
     )
 
     accepted:bool
-    slot:int
     bid_id:int
     seq:int
+    slot:Optional[int] = None

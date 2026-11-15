@@ -42,12 +42,13 @@ class RedisBuffer(Buffer):
         await self._redis.aclose()
     
 
-    async def put(self, bid:Bid) -> PutResult:
+    async def put(self, bid:Bid, seq:int) -> PutResult:
         """
         Отправляет поступившую заявку в Redis
 
         Args:
             bid (Bid): Заявка
+            seq (int): Порядковый номер заявки от конкретного агента
 
         Returns:
             PutResult: Данные о результате выполнения операции
@@ -67,7 +68,10 @@ class RedisBuffer(Buffer):
             args=[self._capacity, bid.source_type.value, payload]
         )
 
-        return PutResult(bool(accepted), slot, bid_id, bid.seq)
+        return PutResult(accepted=bool(accepted), 
+                         slot=int(slot) if accepted else None, 
+                         bid_id=int(bid_id), 
+                         seq=seq)
     
 
     async def get_free_space(self) -> int:

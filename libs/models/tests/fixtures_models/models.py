@@ -39,7 +39,6 @@ def bid_factory(metrics_factory):
         values: dict[str, Any] = {
             "source_name": "agent-1",
             "source_type": ServerTypes.TEST,
-            "seq": 7,
             "time_in": datetime(2026, 1, 1, 12, 0, 0),
             "stats": metrics_factory(),
             "id": None,
@@ -62,9 +61,9 @@ def put_result_factory():
     def factory(**overrides: Any) -> PutResult:
         values: dict[str, Any] = {
             "accepted": True,
-            "slot": 1,
             "bid_id": 42,
             "seq": 7,
+            "slot": 1,
         }
         values.update(overrides)
         return PutResult(**values)
