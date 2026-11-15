@@ -1,0 +1,116 @@
+stages:
+  - test
+  - build
+
+variables:
+  PYTHON_VERSION: "3.14"
+
+run-tests:
+  stage: test
+  image: ghcr.io/astral-sh/uv:python$PYTHON_VERSION-trixie
+  allow_failure: true
+
+  variables:
+    UV_CACHE_DIR: .uv-cache
+    UV_LINK_MODE: copy
+  
+  cache:
+    - key:
+        files:
+          - uv.lock
+      paths:
+        - $UV_CACHE_DIR
+
+  before_script:
+    - uv sync --all-packages --frozen --all-extras
+
+  script:
+    - uv run pytest
+  
+  after_script:
+    - uv cache prune --ci
+
+    - |
+      cat > allure-results/environment.properties << EOF
+      Python=$PYTHON_VERSION
+      Arch=$(uname -m)
+      Runner=${CI_RUNNER_DESCRIPTION}
+      Branch=${CI_COMMIT_REF_NAME}
+      Commit=${CI_COMMIT_SHORT_SHA}
+      EOF
+    
+  coverage: '/TOTAL.*\s+(\d+\.?\d*%)$/'
+
+  artifacts:
+    when: always
+    paths:
+      - allure-results/
+      - htmlcov/
+    reports:
+      junit: junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    expire_in: 1 hour
+
+
+generate-report:
+  stage: test
+  image: eclipse-temurin:17-jdk
+  needs:
+    - job: run-tests
+      artifacts: true
+      optional: true
+
+  cache:
+    - key: allure-history-$CI_COMMIT_REF_SLUG
+      paths:
+        - allure-history/
+      policy: pull-push
+
+  before_script:
+    - curl -L -s -o allure-commandline.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/2.44.0/allure-commandline-2.44.0.tgz
+    - tar -zxf allure-commandline.tgz
+    - mv allure-2.44.0 /opt/allure
+    - ln -s /opt/allure/bin/allure /usr/local/bin/allure
+    - rm allure-commandline.tgz
+
+    - mkdir -p allure-results
+
+    - |
+      if [ -d "allure-history/history" ]; then
+        echo "Restoring Allure history from cache..."
+        cp -r allure-history/history allure-results/
+      fi
+
+    - |
+      cat > allure-results/executor.json << EOF
+      {
+        "reportName": "Watchdog Service test report #$CI_PIPELINE_ID",
+        "buildOrder": $CI_PIPELINE_ID,
+        "reportUrl": "https://gitlab.slendycs.netcraze.pro/slendycs/services-watchdog/-/jobs/$CI_JOB_ID/artifacts/download?file_type=archive",
+        "name": "Gitlab",
+        "type": "gitlab",
+        "buildName": "$CI_COMMIT_REF_NAME-$CI_PIPELINE_ID",
+        "buildUrl": "$CI_PIPELINE_URL"
+      }
+      EOF
+
+  script:
+    - |
+      if [ ! -d "allure-results" ] || [ -z "$(find allure-results -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+        echo "No Allure results were produced; failing report generation"
+        exit 1
+      fi
+      allure generate allure-results -o allure-report --clean
+
+  after_script:
+    - mkdir -p allure-history
+    - cp -r allure-report/history allure-history/ || true
+
+  artifacts:
+    when: always
+    paths:
+      - allure-report/
+    expire_in: 30 days
+

@@ -20,3 +20,7 @@ docker-compose.yml
 # Test reports
 allure-results/
 allure-report/
+.coverage
+junit.xml
+coverage.xml
+htmlcov/
