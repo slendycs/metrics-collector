@@ -1,0 +1,73 @@
+@startuml service_component_diagram
+title Компонентная диаграмма сервиса сбора метрик
+
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam nodesep 25
+skinparam ranksep 40
+skinparam defaultFontName SansSerif
+left to right direction
+
+skinparam component {
+  BackgroundColor<<agent>> #3a3a1e
+  BorderColor<<agent>> #b8b84a
+  FontColor<<agent>> #eeeeee
+  BackgroundColor<<dp>> #3a2a1e
+  BorderColor<<dp>> #e0822a
+  FontColor<<dp>> #eeeeee
+  BackgroundColor<<buf>> #1e3a24
+  BorderColor<<buf>> #3fb950
+  FontColor<<buf>> #eeeeee
+  BackgroundColor<<dv>> #3a1e1e
+  BorderColor<<dv>> #e0443a
+  FontColor<<dv>> #eeeeee
+  BackgroundColor<<wrk>> #1e3a3a
+  BorderColor<<wrk>> #3ab8b8
+  FontColor<<wrk>> #eeeeee
+  BackgroundColor<<ext>> #3a2a1e
+  BorderColor<<ext>> #ff780a
+  FontColor<<ext>> #eeeeee
+  BackgroundColor<<stat>> #1e1e4a
+  BorderColor<<stat>> #4a4aff
+  FontColor<<stat>> #eeeeee
+}
+skinparam database {
+  BackgroundColor<<db>> #2a1e3a
+  BorderColor<<db>> #9a6ae0
+  FontColor<<db>> #eeeeee
+}
+
+package "Пул агентов (серверов)" as AG {
+  component "Агент\nПриоритет 1 (Production)" as A1 <<agent>>
+  component "Агент\nПриоритет 2 (Staging)" as A2 <<agent>>
+  component "Агент\nПриоритет 3 (test)" as A3 <<agent>>
+}
+
+component "Сервис приёма (ДП)\n--\n• Получает метрики и ставит их в буфер\n• Присваивает заявке id и номер (через Redis INCR)\n• Отказывает в размещении новой заявки при переполнении буфера" as DP <<dp>>
+
+component "Буфер\n--\n• Redis с ограниченным объёмом + Lua-скрипты\n• Отдаёт в первую очередь заявку от агента с высшим приоритетом,\n  а в случае равных - последнюю поступившую\n• Атомарно выдаёт id и номер заявки в источнике\n• Размещает заявку на первое свободное место" as BUF <<buf>>
+
+component "Сервис управления воркерами (ДВ)\n--\n• Реагирует на обновление буфера и освобождение воркера\n• Выбирает воркеры по их приоритетам" as DV <<dv>>
+
+package "Пул воркеров" as WP {
+  component "Воркер\nПриоритет 1" as W1 <<wrk>>
+  component "Воркер\nПриоритет 2" as W2 <<wrk>>
+  component "Воркер\nПриоритет 3" as W3 <<wrk>>
+}
+
+component "PagerDuty\n(Алёртинг)" as PD <<ext>>
+database "База данных\n--\n• Хранит время и значение метрик в это время,\n  отдельно для каждого сервера" as DB <<db>>
+component "Сервис статистики\n--\n• Сбор статистики с микросервисов\n• Построение диаграмм работы сервисов" as ST <<stat>>
+
+AG --> DP : Метрики + имя и тип сервера
+DP --> BUF
+BUF --> DV : Уведомление
+DV <--> BUF : Запрос и получение заявки
+DV --> WP : Заявка
+WP --> DV : Статус воркера
+WP --> DB
+WP --> PD : Создание инцидента
+DP --> ST : Кол-во отказов\n+ кол-во заявок
+DV --> ST : Кол-во взятых заявок\n+ время отдачи задачи\nна воркер и её выполнения
+
+@enduml
