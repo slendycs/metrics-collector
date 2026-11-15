@@ -9,7 +9,7 @@ from models.enums import LogLevel, ServerTypes
 from models.metrics import MetricsDTO
 
 
-class TestEnums:
+class TestModels:
     @pytest.mark.unit
     @allure.title("Справочник ServerTypes содержит production, staging и test [UNIT]")
     def test_server_types_values(self):
@@ -41,8 +41,6 @@ class TestEnums:
         with allure.step("Привести ServerType к строке"):
             assert str(ServerTypes.TEST) == "test"
 
-
-class TestMetricsModels:
     @pytest.mark.unit
     @allure.title("Metrics сохраняет переданные поля [UNIT]")
     def test_metrics_dataclass_keeps_fields(self, metrics):

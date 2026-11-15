@@ -17,8 +17,6 @@ class TestHealthRoute:
         with allure.step("Проверить код ответа"):
             assert result == 200
 
-
-class TestHttpIntegration:
     @pytest.mark.integration
     @pytest.mark.asyncio
     @allure.title("GET /health возвращает 200 через ASGI-приложение [INTEGRATION]")

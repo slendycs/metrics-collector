@@ -17,7 +17,7 @@ def _make_settings(**overrides) -> Settings:
     return Settings(_env_file=None, **values)  # type: ignore
 
 
-class TestSettings:
+class TestIntakeConfig:
     @pytest.mark.unit
     @allure.title("Значения буфера и логгера по умолчанию [UNIT]")
     def test_defaults(self):

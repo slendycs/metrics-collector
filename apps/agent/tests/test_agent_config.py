@@ -18,7 +18,7 @@ def _make_settings(**overrides) -> Settings:
     return Settings(_env_file=None, **values) # type: ignore
 
 
-class TestSettings:
+class TestAgentConfig:
     @pytest.mark.unit
     @allure.title("LogLevel по умолчанию равен INFO [UNIT]")
     def test_defaults_log_level_to_info(self, monkeypatch):

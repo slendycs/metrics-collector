@@ -119,3 +119,28 @@ def real_buffer_factory(real_redis):
         return RedisBuffer(real_redis, capacity)
 
     return factory
+
+
+@pytest_asyncio.fixture
+async def real_redis_client_factory(real_redis, redis_url):
+    """Creates independent Redis clients after confirming Redis is available.
+
+    Depends on ``real_redis`` so the test is skipped when Redis is down. Each
+    client uses its own connection pool, keeping the shared ``real_redis``
+    teardown intact.
+    """
+    clients: list[aioredis.Redis] = []
+
+    def factory() -> aioredis.Redis:
+        client = aioredis.from_url(redis_url, decode_responses=True)
+        clients.append(client)
+        return client
+
+    try:
+        yield factory
+    finally:
+        for client in clients:
+            try:
+                await client.aclose()
+            except RedisError:
+                pass

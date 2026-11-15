@@ -7,6 +7,7 @@ from fixtures_buffer.buffer import (  # noqa: E402,F401
     metrics_factory,
     real_buffer_factory,
     real_redis,
+    real_redis_client_factory,
     redis_buffer,
     redis_url,
     scripts,

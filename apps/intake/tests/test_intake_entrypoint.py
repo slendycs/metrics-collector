@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from intake.main import app, lifespan
 
 
-class TestApp:
+class TestIntakeEntrypoint:
     @pytest.mark.unit
     @allure.title("Приложение регистрирует маршруты collect и health [UNIT]")
     def test_app_registers_routers(self):
@@ -37,8 +37,6 @@ class TestApp:
         with allure.step("Проверить освобождение ресурсов"):
             buffer.aclose.assert_awaited_once_with()
 
-
-class TestLifespan:
     @pytest.mark.unit
     @pytest.mark.asyncio
     @allure.title("lifespan создаёт буфер, проверяет его и закрывает [UNIT]")

@@ -9,7 +9,7 @@ from intake.config.dependencies import create_buffer, get_buffer
 from models import BufferTypes
 
 
-class TestCreateBuffer:
+class TestIntakeDependencies:
     @pytest.mark.unit
     @allure.title("create_buffer собирает RedisBuffer из настроек [UNIT]")
     def test_creates_redis_buffer(self):
@@ -79,8 +79,6 @@ class TestCreateBuffer:
             ):
                 create_buffer()
 
-
-class TestGetBuffer:
     @pytest.mark.unit
     @allure.title("get_buffer отдаёт буфер из состояния приложения [UNIT]")
     def test_returns_buffer_from_app_state(self):

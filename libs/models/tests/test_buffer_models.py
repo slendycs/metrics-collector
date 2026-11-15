@@ -9,7 +9,7 @@ from models.buffer import PutResultDTO
 from models.enums import BufferTypes, ServerTypes
 
 
-class TestBufferEnums:
+class TestBufferModels:
     @pytest.mark.unit
     @allure.title("Справочник BufferTypes содержит Redis [UNIT]")
     def test_buffer_types_values(self):
@@ -25,8 +25,6 @@ class TestBufferEnums:
         with allure.step("Привести BufferTypes к строке"):
             assert str(BufferTypes.REDIS) == "REDIS"
 
-
-class TestBidModels:
     @pytest.mark.unit
     @allure.title("Bid сохраняет переданные поля и id по умолчанию равен None [UNIT]")
     def test_bid_keeps_fields(self, bid):
@@ -144,8 +142,6 @@ class TestBidModels:
         with allure.step("Проверить отсутствие id"):
             assert restored.id is None
 
-
-class TestPutResultModels:
     @pytest.mark.unit
     @allure.title("PutResult сохраняет результат постановки заявки [UNIT]")
     def test_put_result_keeps_fields(self, put_result):

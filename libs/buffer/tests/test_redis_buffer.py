@@ -2,7 +2,6 @@ import json
 
 import allure
 import pytest
-import redis.asyncio as aioredis
 from pydantic import ValidationError
 from redis.exceptions import RedisError, ResponseError
 
@@ -21,7 +20,7 @@ class _StubBuffer(Buffer):
         return 0
 
 
-class TestScripts:
+class TestRedisBuffer:
     @pytest.mark.unit
     @allure.title("Загрузка Lua-скрипта {script_name} возвращает код из пакета [UNIT]")
     @pytest.mark.parametrize(
@@ -72,8 +71,6 @@ class TestScripts:
         with allure.step("Проверить сохранённую ёмкость"):
             assert buffer._capacity == 7
 
-
-class TestPut:
     @pytest.mark.unit
     @pytest.mark.asyncio
     @allure.title("put передаёт в Redis capacity, приоритет и JSON-заявку [UNIT]")
@@ -153,8 +150,6 @@ class TestPut:
             with pytest.raises(RedisError, match="connection lost"):
                 await redis_buffer.put(bid)
 
-
-class TestConnection:
     @pytest.mark.unit
     @pytest.mark.asyncio
     @allure.title("ping проверяет соединение с Redis [UNIT]")
@@ -203,8 +198,6 @@ class TestConnection:
             with pytest.raises(NotImplementedError):
                 await redis_buffer.get_free_space()
 
-
-class TestRedisIntegration:
     @pytest.mark.integration
     @pytest.mark.asyncio
     @allure.title("put сохраняет заявку в реальный Redis [INTEGRATION]")
@@ -414,9 +407,11 @@ class TestRedisIntegration:
     @pytest.mark.integration
     @pytest.mark.asyncio
     @allure.title("ping и aclose работают с реальным Redis [INTEGRATION]")
-    async def test_ping_and_aclose_with_real_redis(self, redis_url):
+    async def test_ping_and_aclose_with_real_redis(
+        self, real_redis_client_factory
+    ):
         with allure.step("Подключиться к реальному Redis"):
-            client = aioredis.from_url(redis_url, decode_responses=True)
+            client = real_redis_client_factory()
             buffer = RedisBuffer(client, capacity=1)
 
         with allure.step("Проверить доступность через ping"):
