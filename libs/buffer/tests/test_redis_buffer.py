@@ -3,21 +3,19 @@ import json
 import allure
 import pytest
 from pydantic import ValidationError
+from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import RedisError, ResponseError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
-from buffer import Buffer, RedisBuffer
+from buffer import (
+    BufferConnectionError,
+    BufferException,
+    BufferResponseError,
+    BufferTimeoutError,
+    RedisBuffer,
+)
 from models import Bid, BidDTO, PutResult
 from models.enums import ServerTypes
-
-
-class _StubBuffer(Buffer):
-    """Minimal Buffer implementation to exercise the default methods."""
-
-    async def put(self, bid: Bid, seq: int) -> PutResult:
-        return PutResult(accepted=True, bid_id=1, seq=seq, slot=1)
-
-    async def get_free_space(self) -> int:
-        return 0
 
 
 class TestRedisBuffer:
@@ -142,14 +140,57 @@ class TestRedisBuffer:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    @allure.title("put пробрасывает ошибку Redis [UNIT]")
-    async def test_put_propagates_redis_error(self, redis_buffer, scripts, bid):
+    @pytest.mark.parametrize(
+        ("redis_error", "expected"),
+        [
+            pytest.param(RedisTimeoutError("slow"), BufferTimeoutError, id="timeout"),
+            pytest.param(
+                RedisConnectionError("down"), BufferConnectionError, id="connection"
+            ),
+            pytest.param(ResponseError("lua error"), BufferResponseError, id="response"),
+            pytest.param(RedisError("other"), BufferException, id="generic"),
+        ],
+    )
+    @allure.title("put переводит ошибку Redis в доменную {expected} [UNIT]")
+    async def test_put_translates_redis_error(
+        self, redis_buffer, scripts, bid, redis_error, expected
+    ):
         with allure.step("Смоделировать ошибку Redis в Lua-скрипте"):
-            scripts["put_bid"].side_effect = RedisError("connection lost")
+            scripts["put_bid"].side_effect = redis_error
 
-        with allure.step("Поставить заявку и ожидать исключение"):
-            with pytest.raises(RedisError, match="connection lost"):
+        with allure.step("Поставить заявку и ожидать доменную ошибку"):
+            with pytest.raises(expected) as exc_info:
                 await redis_buffer.put(bid, 7)
+
+        with allure.step("Проверить, что исходная ошибка сохранена как причина"):
+            assert exc_info.value.__cause__ is redis_error
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("redis_error", "expected"),
+        [
+            pytest.param(RedisTimeoutError("slow"), BufferTimeoutError, id="timeout"),
+            pytest.param(
+                RedisConnectionError("down"), BufferConnectionError, id="connection"
+            ),
+            pytest.param(ResponseError("lua error"), BufferResponseError, id="response"),
+            pytest.param(RedisError("other"), BufferException, id="generic"),
+        ],
+    )
+    @allure.title("ping переводит ошибку Redis в доменную {expected} [UNIT]")
+    async def test_ping_translates_redis_error(
+        self, redis_buffer, fake_redis, redis_error, expected
+    ):
+        with allure.step("Смоделировать ошибку Redis на PING"):
+            fake_redis.ping.side_effect = redis_error
+
+        with allure.step("Вызвать ping и ожидать доменную ошибку"):
+            with pytest.raises(expected) as exc_info:
+                await redis_buffer.ping()
+
+        with allure.step("Проверить, что исходная ошибка сохранена как причина"):
+            assert exc_info.value.__cause__ is redis_error
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -173,31 +214,14 @@ class TestRedisBuffer:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    @allure.title("ping базового Buffer по умолчанию ничего не делает [UNIT]")
-    async def test_base_buffer_ping_is_noop(self):
-        with allure.step("Вызвать ping заглушки Buffer"):
-            result = await _StubBuffer().ping()
+    @allure.title("aclose не подменяет ошибку закрытия Redis доменной [UNIT]")
+    async def test_aclose_propagates_redis_error(self, redis_buffer, fake_redis):
+        with allure.step("Смоделировать ошибку при закрытии пула соединений"):
+            fake_redis.aclose.side_effect = RedisError("close failed")
 
-        with allure.step("Проверить отсутствие результата"):
-            assert result is None
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    @allure.title("aclose базового Buffer по умолчанию ничего не делает [UNIT]")
-    async def test_base_buffer_aclose_is_noop(self):
-        with allure.step("Вызвать aclose заглушки Buffer"):
-            result = await _StubBuffer().aclose()
-
-        with allure.step("Проверить отсутствие результата"):
-            assert result is None
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    @allure.title("get_free_space пока не реализован [UNIT]")
-    async def test_get_free_space_is_not_implemented(self, redis_buffer):
-        with allure.step("Вызвать get_free_space"):
-            with pytest.raises(NotImplementedError):
-                await redis_buffer.get_free_space()
+        with allure.step("Вызвать aclose и ожидать исходную ошибку Redis"):
+            with pytest.raises(RedisError, match="close failed"):
+                await redis_buffer.aclose()
 
     @pytest.mark.integration
     @pytest.mark.asyncio

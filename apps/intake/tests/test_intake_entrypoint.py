@@ -4,6 +4,7 @@ import allure
 import pytest
 from fastapi import FastAPI
 
+from buffer import BufferException
 from intake.main import app, lifespan
 
 
@@ -80,22 +81,26 @@ class TestIntakeEntrypoint:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    @allure.title("lifespan пробрасывает ошибку ping и не закрывает буфер [UNIT]")
+    @allure.title("lifespan логирует ошибку ping, пробрасывает её и закрывает буфер [UNIT]")
     async def test_lifespan_propagates_ping_error(self):
         with allure.step("Подготовить буфер с ошибкой ping"):
             test_app = FastAPI()
             buffer = MagicMock()
-            buffer.ping = AsyncMock(side_effect=RuntimeError("redis down"))
+            buffer.ping = AsyncMock(side_effect=BufferException("redis down"))
             buffer.aclose = AsyncMock()
 
         with allure.step("Открыть lifespan и ожидать ошибку"):
-            with patch("intake.main.create_buffer", return_value=buffer):
-                with pytest.raises(RuntimeError, match="redis down"):
+            with patch("intake.main.create_buffer", return_value=buffer), \
+                    patch("intake.main.logger") as logger:
+                with pytest.raises(BufferException, match="redis down"):
                     async with lifespan(test_app):
                         pass
+
+        with allure.step("Проверить, что ошибка залогирована как critical"):
+            logger.critical.assert_called_once()
 
         with allure.step("Проверить, что буфер в state не установлен"):
             assert not hasattr(test_app.state, "buffer")
 
-        with allure.step("Проверить, что aclose не вызывался"):
-            buffer.aclose.assert_not_awaited()
+        with allure.step("Проверить, что буфер закрыт, несмотря на ошибку ping"):
+            buffer.aclose.assert_awaited_once_with()
