@@ -1,73 +1,74 @@
 @startuml service_component_diagram
-title Компонентная диаграмма сервиса сбора метрик
-
-skinparam shadowing false
-skinparam componentStyle rectangle
-skinparam nodesep 25
-skinparam ranksep 40
-skinparam defaultFontName SansSerif
+title Диаграмма компонентов — Сервис сбора метрик (вариант 27)
 left to right direction
+skinparam componentStyle uml2
 
-skinparam component {
-  BackgroundColor<<agent>> #3a3a1e
-  BorderColor<<agent>> #b8b84a
-  FontColor<<agent>> #eeeeee
-  BackgroundColor<<dp>> #3a2a1e
-  BorderColor<<dp>> #e0822a
-  FontColor<<dp>> #eeeeee
-  BackgroundColor<<buf>> #1e3a24
-  BorderColor<<buf>> #3fb950
-  FontColor<<buf>> #eeeeee
-  BackgroundColor<<dv>> #3a1e1e
-  BorderColor<<dv>> #e0443a
-  FontColor<<dv>> #eeeeee
-  BackgroundColor<<wrk>> #1e3a3a
-  BorderColor<<wrk>> #3ab8b8
-  FontColor<<wrk>> #eeeeee
-  BackgroundColor<<ext>> #3a2a1e
-  BorderColor<<ext>> #ff780a
-  FontColor<<ext>> #eeeeee
-  BackgroundColor<<stat>> #1e1e4a
-  BorderColor<<stat>> #4a4aff
-  FontColor<<stat>> #eeeeee
-}
-skinparam database {
-  BackgroundColor<<db>> #2a1e3a
-  BorderColor<<db>> #9a6ae0
-  FontColor<<db>> #eeeeee
+package "Пул агентов (ИБ, ИЗ2)" {
+  component "Агент\nприоритет 1 (production)" as A1
+  component "Агент\nприоритет 2 (staging)" as A2
+  component "Агент\nприоритет 3 (test)" as A3
 }
 
-package "Пул агентов (серверов)" as AG {
-  component "Агент\nПриоритет 1 (Production)" as A1 <<agent>>
-  component "Агент\nПриоритет 2 (Staging)" as A2 <<agent>>
-  component "Агент\nПриоритет 3 (test)" as A3 <<agent>>
+component "Сервис приёма (ДП)\napps/intake" as DP
+interface "POST /collect" as ICollect
+
+component "Буфер (Д1ОЗ3, Д1ОО5, Д2Б4)\nlibs/buffer: Buffer ← RedisBuffer" as BUF
+database "Redis + Lua\nput_bid / take_next / return_bid\nPub/Sub buffer_updated" as REDIS
+
+component "Сервис управления воркерами (ДВ, Д2П1)\nWorkerManager" as DV
+interface "POST /register\nPOST /update-status" as IDisp
+
+package "Пул воркеров (П31, ПЗ1)" {
+  component "Воркер 1\nприоритет 1" as W1
+  component "Воркер 2\nприоритет 2" as W2
+  component "Воркер 3\nприоритет 3" as W3
 }
+interface "POST /process" as IProc
 
-component "Сервис приёма (ДП)\n--\n• Получает метрики и ставит их в буфер\n• Присваивает заявке глобальный id (через Redis INCR в буфере)\n• Номер заявки в источнике (seq) приходит от агента и уходит в статистику\n• Отказывает в размещении новой заявки при переполнении буфера" as DP <<dp>>
+component "Сервис статистики (ОР1, ОД3)" as ST
+interface "POST /webhooks/new\nPOST /webhooks/reject\nPOST /task-status" as IStat
+interface "GET /summary\nGET /precision\nGET /timeline" as IRep
 
-component "Буфер\n--\n• Redis с ограниченным объёмом + Lua-скрипты\n• Отдаёт в первую очередь заявку от агента с высшим приоритетом,\n  а в случае равных - последнюю поступившую\n• Атомарно выдаёт глобальный id заявки\n• Размещает заявку на первое свободное место" as BUF <<buf>>
+database "БД временных рядов" as TSDB
+cloud "PagerDuty" as PD
+actor "Оператор" as OP
 
-component "Сервис управления воркерами (ДВ)\n--\n• Реагирует на обновление буфера и освобождение воркера\n• Выбирает воркеры по их приоритетам" as DV <<dv>>
+A1 -( ICollect
+A2 -( ICollect
+A3 -( ICollect
+ICollect - DP
 
-package "Пул воркеров" as WP {
-  component "Воркер\nПриоритет 1" as W1 <<wrk>>
-  component "Воркер\nПриоритет 2" as W2 <<wrk>>
-  component "Воркер\nПриоритет 3" as W3 <<wrk>>
-}
+DP ..> BUF : <<use>> put(bid, seq)\n(DI: Buffer)
+BUF ..> REDIS : EVALSHA, PUBLISH
+DV ..> BUF : <<use>> pull / requeue / subscribe\n(DI: Buffer)
+BUF ..> DV : <<callback>> on_buffer_updated
 
-component "PagerDuty\n(Алёртинг)" as PD <<ext>>
-database "База данных\n--\n• Хранит время и значение метрик в это время,\n  отдельно для каждого сервера" as DB <<db>>
-component "Сервис статистики\n--\n• Сбор статистики с микросервисов\n• Построение диаграмм работы сервисов" as ST <<stat>>
+DV - IDisp
+W1 -( IDisp
+W2 -( IDisp
+W3 -( IDisp
 
-AG --> DP : Метрики + имя и тип сервера + seq
-DP --> BUF
-BUF --> DV : Уведомление
-DV <--> BUF : Запрос и получение заявки
-DV --> WP : Заявка
-WP --> DV : Статус воркера
-WP --> DB
-WP --> PD : Создание инцидента
-DP --> ST : Кол-во отказов\n+ кол-во заявок
-DV --> ST : Кол-во взятых заявок\n+ время отдачи задачи\nна воркер и её выполнения
+DV -( IProc
+IProc - W1
+IProc - W2
+IProc - W3
 
+W1 ..> TSDB : write
+W2 ..> TSDB : write
+W3 ..> TSDB : write
+W1 ..> PD : create_incident
+W2 ..> PD : create_incident
+W3 ..> PD : create_incident
+
+DP -( IStat
+DV -( IStat
+IStat - ST
+ST - IRep
+OP -( IRep
+
+note bottom of BUF
+  Буфер подключается через DI:
+  Settings.buffer_type → create_buffer()
+  → RedisBuffer(redis_client, capacity)
+end note
 @enduml

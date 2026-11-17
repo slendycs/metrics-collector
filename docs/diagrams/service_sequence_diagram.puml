@@ -1,135 +1,148 @@
 @startuml service_sequence_diagram
-title Диаграмма последовательности сервиса сбора метрик
-
+title Диаграмма последовательности — Сервис сбора метрик (вариант 27: ИБ ИЗ2 ПЗ1 Д1ОЗ3 Д1ОО5 Д2П1 Д2Б4 ОР1 ОД3)
 autonumber
-skinparam shadowing false
+skinparam sequenceMessageAlign left
 
-participant "Агент\n(PollingManager + Client)" as AG
-participant "ДП\n(Сервис приёма, POST /collect)" as DP
-participant "Буфер\n(Redis, Lua-скрипты)" as BUF
+participant "Агент\n(PoolingManager + Client)" as AG
+participant "ДП\nСервис приёма\nPOST /collect" as DP
+participant "Buffer (DI)\nRedisBuffer + Lua" as BUF
 participant "Сервис статистики" as ST
-participant "ДВ\n(WorkerManager,\nединственный экземпляр)" as DV
-participant "Воркер k\n(Worker.run)" as W
-participant "БД временных рядов" as DB
+participant "ДВ\nWorkerManager\n(единственный экземпляр)" as DV
+participant "Воркер k\nWorker.run" as W
+database "БД временных рядов" as DB
 participant "PagerDuty" as PD
-participant "Оператор\n(отчёт)" as OP
+actor "Оператор" as OP
 
-note over DV, W : Старт
-DV -> BUF : subscribe(callback = on_buffer_updated)
-note over DV : Запуск watchdog (раз в watchdog_interval)
+== Старт ==
+DV -> BUF : subscribe(on_buffer_updated)
+note over DV : запуск watchdog (раз в watchdog_interval)
 W -> DV : POST /register(worker_id, url, priority)
-DV -> DV : add_worker(worker),\nсписок упорядочен по priority (Д2П1)
+DV -> DV : add_worker(worker)\nсписок упорядочен по priority (Д2П1)
 DV --> W : 200 OK
-DV -> DV : _try_dispatch()\n(триггер: новый воркер)
+DV -> DV : _try_dispatch() (триггер: новый воркер)
 
-note over AG, ST : Триггер А: срабатывание таймера агента
-loop Пока агент работает (ИБ, бесконечный источник)
-    AG -> AG : collect() → ServerStats\n(server_name, server_type, seq = ++_seq, metrics)
-    AG -> DP : POST /collect(ServerStats)
-    DP -> DP : bid = Bid(source_name, source_type,\n time_in = now, stats = metrics),\nid пока пуст (seq остаётся в ServerStats)
-    DP -> BUF : put(bid, seq)
-    note over BUF : Lua put_bid (атомарно)
-    note over BUF : INCR buffer:bid_id (глобальный id).\nRedis seq не считает и не хранит, его ведёт агент
-    note over BUF : Блокировки в ДП не нужны,\nработает при нескольких экземплярах ДП
-    note over BUF : Д1ОЗ3 - первое свободное место\nот начала буфера, без сдвига, указателя нет
+== Триггер А: срабатывание таймера агента (ИБ — бесконечный, ИЗ2 — равномерный интервал) ==
+loop пока агент работает
+  AG -> AG : collect() → ServerStats\n(server_name, server_type, seq, metrics)
+  AG -> DP : POST /collect(ServerStatsDTO)
+  DP -> DP : bid = Bid(source_name, source_type,\ntime_in = now, stats), id пока пуст
+  DP -> BUF : put(bid, seq)
+  note over BUF
+    Lua put_bid (атомарно)
+    INCR buffer:bid_id — глобальный id (выдаётся всегда)
+    seq Redis не считает, его присылает агент
+    Д1ОЗ3: первое свободное место от начала, без сдвига
+    Блокировки в ДП не нужны, работает при нескольких экземплярах ДП
+  end note
+  alt есть свободное место (accepted = true)
     BUF --> DP : PutResult(accepted, slot, bid_id, seq)
-    note over DP, BUF : Lua возвращает только accepted, slot и bid_id,\nа seq клиент буфера подставляет из аргумента put
-    DP -> DP : bid.id = bid_id
+    BUF -> DV : PUBLISH buffer_updated (триггер Б1)
+  else буфер полон — отказ новой заявке (Д1ОО5)
+    BUF --> DP : PutResult(accepted = false, slot = None, bid_id, seq)
+    note over DP,BUF : буфер и заявки в нём не меняются, выбивания нет;\nпакет потерян, следующий придёт по таймеру агента
+  end
+  DP -> DP : bid.id = result.bid_id
+  alt accepted
     DP ->> ST : POST /webhooks/new(bid, seq, slot)
-    note over ST : mark_start(at) при первой заявке,\ngenerated += 1,\nзапоминает соответствие bid_id → seq
-    alt Есть свободное место
-        note over DP, BUF : accepted = True, slot занят
-        BUF ->> DV : PUBLISH buffer_updated (триггер Б1)
-    else Буфер полон (отказ, Д1ОО5)
-        note over DP, BUF : accepted = False, slot = None,\nid всё равно выдан
-        note over DP, BUF : Буфер и заявки в нём не меняются,\nвыбивания нет
-        note over DP, BUF : Пакет потерян, следующий придёт\nпо таймеру агента
-        DP ->> ST : POST /webhooks/reject(bid, seq)
-        note over ST : reject += 1, mark_end(at)
-    end
-    DP --> AG : 202 Accepted\n(всегда, агент об отказе не знает)
-    opt Сетевая ошибка при отправке
-        note over AG, DP : Client бросает Exception,\nPollingManager пропускает такт
-    end
-    AG -> AG : sleep(uniform(timeout_min, timeout_max)) (ИЗ2)
+    note over ST : mark_start(at) при первой заявке, generated += 1
+  else отказ
+    DP ->> ST : POST /webhooks/new(bid, seq, slot = None)
+    DP ->> ST : POST /webhooks/reject(bid, seq)
+    note over ST : reject += 1, mark_end(at)
+  end
+  DP --> AG : 201 Created (PutResultDTO)
+  opt сетевая ошибка / 5xx (504 таймаут буфера, 502 нет соединения, 500)
+    note over AG,DP : Client бросает Exception, PoolingManager пропускает такт
+  end
+  AG -> AG : sleep(uniform(timeout_min, timeout_max)) (ИЗ2)
 end
 
-note over DV, W : Диспетчеризация ДВ
-note over DV, W : Все триггеры (Б1, Б2, регистрация, watchdog)\n→ один идемпотентный _try_dispatch под asyncio.Lock
-DV -> DV : on_buffer_updated() / on_worker_free()\n/ add_worker() / watchdog()
-loop Пока есть свободный воркер и заявка в буфере
-    DV -> DV : _get_worker()\n(Д2П1 - первый IDLE по возрастанию priority)
-    alt Свободных воркеров нет (воркеры не отказывают, они заняты)
-        note over DV, BUF : Заявки остаются в буфере,\nцикл завершён, ждём триггер Б2
-    else Воркер k найден
-        DV -> BUF : pull()
-        note over BUF : Lua take_next (атомарно)
-        note over BUF : Д2Б4 - приоритет по source_type,\nпри равных max(id), слот освобождается
-        note over BUF : Номер слота не задаёт порядок выбора,\nД1ОЗ3 кладёт на первое свободное место
-        alt Буфер пуст
-            BUF --> DV : None
-            note over DV : Цикл завершён, воркер k остаётся IDLE, ждём Б1
-        else В буфере есть заявка
-            BUF --> DV : TakeResult(bid, slot)
-            DV -> DV : worker.status = BUSY,\ncurrent_bid = bid, started_at = now
-            DV -> W : POST /process(bid)
-            alt Воркер принял заявку
-                W --> DV : 202 Accepted
-                DV ->> ST : POST /task-status(bid, taken, worker_id, slot,\n t_ож = now - bid.time_in, at)
-                note over ST : seq события берётся по bid.id\nиз соответствия bid_id → seq, ДВ seq не знает
-            else Воркер занят (409) или недоступен (сеть, 5xx)
-                W --> DV : 409 Conflict или ответа нет
-                DV -> BUF : requeue(bid)
-                note over BUF : Lua return_bid - первое свободное место,\nid и payload (включая time_in) сохраняются, PUBLISH нет
-                alt Место в буфере есть
-                    BUF --> DV : True
-                    note over DV : Заявка снова в очереди,\nвремя ожидания продолжает копиться
-                else Буфер полон
-                    BUF --> DV : False
-                    DV ->> ST : POST /webhooks/reject(bid)
-                    note over DV, ST : Техническая потеря,\nв штатном прогоне не возникает
-                end
-                DV -> DV : _release(worker) - IDLE или UNAVAILABLE,\ncurrent_bid = None
-            end
+== Диспетчеризация ДВ ==
+note over DV
+  Все триггеры (Б1, Б2, регистрация, watchdog) → один идемпотентный
+  _try_dispatch под asyncio.Lock
+end note
+DV -> DV : on_buffer_updated() / on_worker_free() / add_worker() / watchdog()
+loop пока есть свободный воркер и заявка в буфере
+  DV -> DV : _get_worker() — первый IDLE по возрастанию priority (Д2П1)
+  alt свободных воркеров нет (воркеры не отказывают, они заняты)
+    note over DV,BUF : заявки остаются в буфере, цикл завершён, ждём триггер Б2
+  else воркер k найден
+    DV -> BUF : pull()
+    note over BUF
+      Lua take_next (атомарно)
+      Д2Б4: приоритет по source_type, при равных max(id), слот освобождается
+      Номер слота порядок выбора не задаёт
+    end note
+    alt буфер пуст
+      BUF --> DV : None
+      note over DV : цикл завершён, воркер k остаётся IDLE, ждём Б1
+    else в буфере есть заявка
+      BUF --> DV : TakeResult(bid, slot)
+      DV -> DV : worker.status = BUSY, current_bid = bid,\ncurrent_slot = slot, started_at = now
+      DV -> W : POST /process(BidDTO)
+      alt воркер принял заявку
+        W --> DV : 202 Accepted
+        DV ->> ST : POST /task-status(bid, taken, worker_id, slot, t_ож = now − bid.time_in, at)
+      else воркер занят (409) или недоступен (сеть, 5xx)
+        W --> DV : 409 Conflict или ответа нет
+        DV -> BUF : requeue(bid)
+        note over BUF : Lua return_bid — первое свободное место,\nid и time_in сохраняются, без PUBLISH
+        alt место в буфере есть
+          BUF --> DV : True
+          note over DV : заявка снова в очереди, время ожидания продолжает копиться
+        else буфер полон
+          BUF --> DV : False
+          DV ->> ST : POST /webhooks/reject(bid)
+          note over DV,ST : техническая потеря, в штатном прогоне не возникает
         end
+        DV -> DV : _release(worker) — IDLE или UNAVAILABLE, current_bid = None
+      end
     end
+  end
 end
-note over W : Обработка заявки, ПЗ1 - t_обсл ~ Exp(1 / mean_service_time)
-W -> W : run(bid) - принять и десериализовать пакет
-W -> W : _emulate_service() - выдержка\nпо экспоненциальному закону
+
+== Обработка заявки воркером (ПЗ1: t_обсл ~ Exp(1 / mean_service_time)) ==
+W -> W : run(bid) — принять и десериализовать пакет
+W -> W : _emulate_service() — выдержка по экспоненциальному закону
 W -> DB : write(bid)
 DB --> W : OK
 W -> W : _is_anomaly(metrics)
-opt Обнаружена аномалия (длинный хвост ПЗ1)
-    W -> PD : create_incident(bid, metric)
-    PD --> W : incidentId
+opt обнаружена аномалия (длинный хвост ПЗ1)
+  W -> PD : create_incident(bid, metric)
+  PD --> W : incidentId
 end
-note over W, DV : Триггер Б2 - воркер освободился
+
+== Триггер Б2: воркер освободился ==
 W -> DV : POST /update-status(worker_id, task_id, IDLE, t_service)
-DV -> DV : on_worker_free() - сверка task_id,\nbid = worker.current_bid
-note over DV : Запоздавший ответ со старым task_id игнорируется
+DV -> DV : on_worker_free() — сверка task_id, bid = worker.current_bid
+note over DV : запоздавший ответ со старым task_id игнорируется
 DV -> DV : worker.status = IDLE, current_bid = None, started_at = None
-DV ->> ST : POST /task-status(bid, done, worker_id, slot,\n t_обсл = t_service, at)
+DV ->> ST : POST /task-status(bid, done, worker_id, slot, t_обсл = t_service, at)
 note over ST : add_wait, add_service, add_busy, mark_end(at)
 DV --> W : 200 OK
 DV -> DV : _try_dispatch()
-note over DV, BUF : Заявка, ждавшая в буфере,\nуходит на освободившегося воркера
-loop Каждые watchdog_interval секунд
-    DV -> DV : watchdog() → _reclaim_stale()
-    opt Воркер BUSY дольше task_timeout (завис или упал)
-        DV -> BUF : requeue(current_bid), при переполнении - POST /webhooks/reject
-        DV -> DV : worker.status = UNAVAILABLE, current_bid = None
+note over DV,BUF : заявка, ждавшая в буфере, уходит на освободившегося воркера
+
+== Watchdog ==
+loop каждые watchdog_interval секунд
+  DV -> DV : watchdog() → _reclaim_stale()
+  opt воркер BUSY дольше task_timeout (завис или упал)
+    DV -> BUF : requeue(current_bid)
+    opt буфер полон
+      DV ->> ST : POST /webhooks/reject(bid)
     end
-    DV -> DV : _try_dispatch()\n(страховка от потери buffer_updated,\nPub/Sub не гарантирует доставку)
+    DV -> DV : worker.status = UNAVAILABLE, current_bid = None
+  end
+  DV -> DV : _try_dispatch() (страховка от потери buffer_updated: Pub/Sub не гарантирует доставку)
 end
 
-note over ST, OP : Чтение результатов
+== Чтение результатов (ОР1, ОД3) ==
 OP -> ST : GET /summary
-ST --> OP : Summary (таблица 1 по источникам,\nтаблица 2 по воркерам, total_time)
-note over ST : total_time = mark_end - mark_start,\nобщее время реализации для K_исп
+ST --> OP : Summary (таблица 1 по источникам, таблица 2 по воркерам, total_time)
+note over ST : total_time = mark_end − mark_start — общее время реализации для K_исп
 OP -> ST : GET /precision
-ST --> OP : PrecisionReport (required_n, generated, reached)
+ST --> OP : PrecisionReport(required_n, generated, reached)
 OP -> ST : GET /timeline
-ST --> OP : list of TimelineEvent\n(at, kind, source_name, seq, bid_id, slot, worker_id) для ОД3
-
+ST --> OP : list<TimelineEvent> (at, kind, source_name, seq, bid_id, slot, worker_id)
 @enduml
