@@ -42,6 +42,8 @@ class PutResult:
     accepted:bool # Статус заявки 
     bid_id:int # id заявки
     seq:int # Порядковый номер заявки от источника
+    source_name:str # Имя источника
+    source_type:ServerTypes # Тип источника
     slot:Optional[int] = None # Номер места в буфере
 
 
@@ -54,4 +56,6 @@ class PutResultDTO(BaseModel):
     accepted:bool
     bid_id:int
     seq:int
+    source_name:str
+    source_type:ServerTypes
     slot:Optional[int] = None

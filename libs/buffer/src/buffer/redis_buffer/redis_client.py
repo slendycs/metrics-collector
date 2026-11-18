@@ -111,5 +111,7 @@ class RedisBuffer(Buffer):
             accepted=bool(accepted),
             slot=int(slot) if accepted else None,
             bid_id=int(bid_id),
-            seq=seq
+            seq=seq,
+            source_name=bid.source_name,
+            source_type=bid.source_type
         )

@@ -63,6 +63,8 @@ def put_result_factory():
             "accepted": True,
             "bid_id": 42,
             "seq": 7,
+            "source_name": "agent-1",
+            "source_type": ServerTypes.TEST,
             "slot": 1,
         }
         values.update(overrides)

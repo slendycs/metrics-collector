@@ -5,6 +5,7 @@ import os
 os.environ.setdefault("BUFFER_TYPE", "REDIS")
 os.environ.setdefault("BUFFER_CAPACITY", "3")
 os.environ.setdefault("REDIS_URL", "redis://127.0.0.1:6389/15")
+os.environ.setdefault("STATS_SERVER_URL", "http://stats.test")
 os.environ.setdefault("LOG_LEVEL", "INFO")
 
 # Fixtures are imported directly instead of via `pytest_plugins`: defining
@@ -14,4 +15,6 @@ from fixtures_intake.stats import (  # noqa: E402,F401
     metrics_dto,
     server_stats_dto,
     server_stats_payload,
+    stats_client_stub,
+    stats_client_stub_factory,
 )

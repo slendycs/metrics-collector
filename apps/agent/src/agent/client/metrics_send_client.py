@@ -14,7 +14,7 @@ class Client:
             stats (ServerStats): Пакет метрик
         
         Raises:
-            HTTPExeption: При ошибках сети
+            HTTPExeption: При ошибках сети, не 200-го статус кода
         """
         dto = ServerStatsDTO.model_validate(stats)
         payload = dto.model_dump(mode='json')

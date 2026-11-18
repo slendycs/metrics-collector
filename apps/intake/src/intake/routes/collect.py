@@ -1,11 +1,13 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import ValidationError
+from httpx import HTTPError
 
 from buffer import Buffer, BufferException, BufferTimeoutError, BufferConnectionError
-from intake.config import get_buffer, logger
-from models import Bid, PutResult, ServerStatsDTO, PutResultDTO
+from models import Bid, ServerStatsDTO, PutResultDTO
 
+from intake.config import get_buffer, logger
+from intake.stats import StatsClient
 
 intake_router = APIRouter()
 collect_response_codes = {
@@ -15,14 +17,17 @@ collect_response_codes = {
 }
 
 
-@intake_router.post('/collect', status_code=201,
-                    responses=collect_response_codes,
-                    response_model=PutResultDTO)
-async def collect_metrics(stats: ServerStatsDTO,
-                          buffer: Buffer = Depends(get_buffer)):
+@intake_router.post(
+    '/collect',
+    status_code=201,
+    responses=collect_response_codes,
+    response_model=PutResultDTO
+)
+async def collect_metrics(stats: ServerStatsDTO, 
+                          buffer: Buffer = Depends(get_buffer)
+):
     try:
         stats_obj = stats.to_obj()
-
         bid = Bid(
             source_name=stats_obj.server_name,
             source_type=stats_obj.server_type,
@@ -30,7 +35,8 @@ async def collect_metrics(stats: ServerStatsDTO,
             stats=stats_obj.metrics
         )
 
-        return await buffer.put(bid, stats_obj.seq)
+        result = await buffer.put(bid, stats_obj.seq)
+
     except BufferTimeoutError as err:
         logger.error(err)
         raise HTTPException(status_code=504) from err
@@ -40,3 +46,10 @@ async def collect_metrics(stats: ServerStatsDTO,
     except (BufferException, ValidationError) as err:
         logger.error(err)
         raise HTTPException(status_code=500) from err
+
+    try:
+        await StatsClient().notify(result)
+    except HTTPError as err:
+        logger.warning(f'Failed to send metrics to stats server: {str(err)}')
+
+    return result

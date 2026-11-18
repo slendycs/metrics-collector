@@ -1,10 +1,10 @@
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
+
+from buffer import BufferException
 
 from intake.config import create_buffer, logger
 from intake.routes import intake_router, service_router
-from buffer.buffer_errors import BufferException
 
 
 @asynccontextmanager

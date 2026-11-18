@@ -149,6 +149,8 @@ class TestBufferModels:
             assert put_result.accepted is True
             assert put_result.bid_id == 42
             assert put_result.seq == 7
+            assert put_result.source_name == "agent-1"
+            assert put_result.source_type is ServerTypes.TEST
             assert put_result.slot == 1
 
     @pytest.mark.unit
@@ -161,6 +163,8 @@ class TestBufferModels:
             assert dto.accepted is put_result.accepted
             assert dto.bid_id == put_result.bid_id
             assert dto.seq == put_result.seq
+            assert dto.source_name == put_result.source_name
+            assert dto.source_type is put_result.source_type
             assert dto.slot == put_result.slot
 
     @pytest.mark.unit
@@ -176,5 +180,7 @@ class TestBufferModels:
                 "accepted": False,
                 "bid_id": 42,
                 "seq": 7,
+                "source_name": "agent-1",
+                "source_type": "test",
                 "slot": None,
             }

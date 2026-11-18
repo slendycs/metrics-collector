@@ -8,13 +8,13 @@ from .config import settings
 
 
 def create_buffer() -> Buffer:
-    """Создаёт буфер указанного в конфигурации типа.
+    """Создаёт буфер указанного в конфигурации типа
 
     Returns:
-        Buffer: Объект для работы с буфером.
+        Buffer: Объект для работы с буфером
 
     Raises:
-        ValueError: Если тип буфера не поддерживается или не задан redis_url.
+        ValueError: Если тип буфера не поддерживается или не задан redis_url
     """
     if settings.buffer_type == BufferTypes.REDIS:
         if settings.redis_url is None:
@@ -33,5 +33,5 @@ def create_buffer() -> Buffer:
 
 
 def get_buffer(request: Request) -> Buffer:
-    """FastAPI-зависимость: отдаёт буфер, созданный в lifespan."""
+    """FastAPI-зависимость: отдаёт буфер, созданный в lifespan"""
     return request.app.state.buffer

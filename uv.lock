@@ -389,6 +389,7 @@ source = { editable = "apps/intake" }
 dependencies = [
     { name = "buffer" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "models" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -400,6 +401,7 @@ dependencies = [
 requires-dist = [
     { name = "buffer", editable = "libs/buffer" },
     { name = "fastapi", specifier = ">=0.162.4" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "models", editable = "libs/models" },
     { name = "pydantic", specifier = ">=2.14.3" },
     { name = "pydantic-settings", specifier = ">=2.16.2" },

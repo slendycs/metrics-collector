@@ -88,7 +88,14 @@ class TestRedisBuffer:
             )
 
         with allure.step("Проверить результат постановки"):
-            assert result == PutResult(accepted=True, bid_id=42, seq=7, slot=2)
+            assert result == PutResult(
+                accepted=True,
+                bid_id=42,
+                seq=7,
+                source_name="agent-1",
+                source_type=ServerTypes.TEST,
+                slot=2,
+            )
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -234,7 +241,14 @@ class TestRedisBuffer:
             result = await buffer.put(bid, 7)
 
         with allure.step("Проверить результат постановки"):
-            assert result == PutResult(accepted=True, bid_id=1, seq=7, slot=1)
+            assert result == PutResult(
+                accepted=True,
+                bid_id=1,
+                seq=7,
+                source_name="agent-1",
+                source_type=ServerTypes.TEST,
+                slot=1,
+            )
 
         with allure.step("Проверить слот и счётчик заявок в Redis"):
             raw_envelope = await real_redis.hget("buffer:slots", "1")

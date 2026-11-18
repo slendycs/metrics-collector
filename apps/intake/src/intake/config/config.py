@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     buffer_type: BufferTypes = BufferTypes.REDIS
     buffer_capacity: int = Field(gt=0)
     redis_url: str | None = None
+    stats_server_url:str
     log_level: LogLevel = LogLevel.INFO
 
     @model_validator(mode='after')

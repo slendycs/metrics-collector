@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import httpx
 import pytest
 
 from buffer import Buffer
@@ -48,7 +49,14 @@ class StubBuffer(Buffer):
         self._result = (
             result
             if result is not None
-            else PutResult(accepted=True, bid_id=1, seq=0, slot=1)
+            else PutResult(
+                accepted=True,
+                bid_id=1,
+                seq=0,
+                source_name="agent-1",
+                source_type=ServerTypes.TEST,
+                slot=1,
+            )
         )
         self.error = error
         self.calls: list[tuple] = []
@@ -77,3 +85,34 @@ def buffer_stub_factory():
         return StubBuffer(result=result, error=error)
 
     return factory
+
+
+class StubStatsClient:
+    """Клиент статистики-заглушка: записывает notify и умеет вернуть ошибку."""
+
+    _STATS_ENDPOINT = "/intake/take"
+
+    def __init__(self, error: httpx.HTTPError | None = None) -> None:
+        self.error = error
+        self.calls: list[PutResult] = []
+
+    async def notify(self, post_result: PutResult) -> None:
+        self.calls.append(post_result)
+        if self.error is not None:
+            raise self.error
+
+
+@pytest.fixture
+def stats_client_stub_factory():
+    """Создаёт заглушку StatsClient с заданной ошибкой notify."""
+
+    def factory(error: httpx.HTTPError | None = None) -> StubStatsClient:
+        return StubStatsClient(error=error)
+
+    return factory
+
+
+@pytest.fixture
+def stats_client_stub() -> StubStatsClient:
+    """Заглушка StatsClient без ошибок: запоминает отправленные результаты."""
+    return StubStatsClient()

@@ -11,6 +11,7 @@ def _make_settings(**overrides) -> Settings:
         "buffer_type": "REDIS",
         "buffer_capacity": 3,
         "redis_url": "redis://redis.test:6379/0",
+        "stats_server_url": "http://stats.test",
         "log_level": "INFO",
     }
     values.update(overrides)
@@ -24,8 +25,9 @@ class TestIntakeConfig:
         with allure.step("Создать настройки без явных значений по умолчанию"):
             settings = _make_settings()
 
-        with allure.step("Проверить тип буфера и уровень логирования"):
+        with allure.step("Проверить тип буфера, адрес статистики и уровень логирования"):
             assert settings.buffer_type is BufferTypes.REDIS
+            assert settings.stats_server_url == "http://stats.test"
             assert settings.log_level is LogLevel.INFO
 
     @pytest.mark.unit
@@ -59,7 +61,25 @@ class TestIntakeConfig:
 
         with allure.step("Создать настройки без ёмкости"):
             with pytest.raises(ValidationError):
-                Settings(_env_file=None, redis_url="redis://redis.test:6379/0")  # type: ignore
+                Settings(  # type: ignore
+                    _env_file=None,
+                    redis_url="redis://redis.test:6379/0",
+                    stats_server_url="http://stats.test",
+                )
+
+    @pytest.mark.unit
+    @allure.title("Настройки требуют адрес сервера статистики [UNIT]")
+    def test_requires_stats_server_url(self, monkeypatch):
+        with allure.step("Убрать STATS_SERVER_URL из окружения"):
+            monkeypatch.delenv("STATS_SERVER_URL", raising=False)
+
+        with allure.step("Создать настройки без адреса статистики"):
+            with pytest.raises(ValidationError, match="stats_server_url"):
+                Settings(  # type: ignore
+                    _env_file=None,
+                    buffer_capacity=3,
+                    redis_url="redis://redis.test:6379/0",
+                )
 
     @pytest.mark.unit
     @allure.title("Redis-буфер требует URL подключения [UNIT]")
@@ -69,7 +89,12 @@ class TestIntakeConfig:
 
         with allure.step("Создать настройки Redis-буфера без URL"):
             with pytest.raises(ValueError, match="no connection url"):
-                Settings(_env_file=None, buffer_type="REDIS", buffer_capacity=3)  # type: ignore
+                Settings(  # type: ignore
+                    _env_file=None,
+                    buffer_type="REDIS",
+                    buffer_capacity=3,
+                    stats_server_url="http://stats.test",
+                )
 
     @pytest.mark.unit
     @allure.title("Настройки отклоняют неизвестный тип буфера [UNIT]")
@@ -85,6 +110,7 @@ class TestIntakeConfig:
             monkeypatch.setenv("BUFFER_TYPE", "REDIS")
             monkeypatch.setenv("BUFFER_CAPACITY", "8")
             monkeypatch.setenv("REDIS_URL", "redis://env.test:6379/2")
+            monkeypatch.setenv("STATS_SERVER_URL", "http://stats.env.test")
             monkeypatch.setenv("LOG_LEVEL", "DEBUG")
 
         with allure.step("Создать настройки без .env файла"):
@@ -94,13 +120,20 @@ class TestIntakeConfig:
             assert settings.buffer_type is BufferTypes.REDIS
             assert settings.buffer_capacity == 8
             assert settings.redis_url == "redis://env.test:6379/2"
+            assert settings.stats_server_url == "http://stats.env.test"
             assert settings.log_level is LogLevel.DEBUG
 
     @pytest.mark.integration
     @allure.title("Настройки читаются из реального .env файла [INTEGRATION]")
     def test_reads_settings_from_real_env_file(self, monkeypatch, tmp_path):
         with allure.step("Очистить одноимённые переменные окружения"):
-            for name in ("BUFFER_TYPE", "BUFFER_CAPACITY", "REDIS_URL", "LOG_LEVEL"):
+            for name in (
+                "BUFFER_TYPE",
+                "BUFFER_CAPACITY",
+                "REDIS_URL",
+                "STATS_SERVER_URL",
+                "LOG_LEVEL",
+            ):
                 monkeypatch.delenv(name, raising=False)
 
         with allure.step("Записать временный .env файл"):
@@ -109,6 +142,7 @@ class TestIntakeConfig:
                 "BUFFER_TYPE=REDIS\n"
                 "BUFFER_CAPACITY=5\n"
                 "REDIS_URL=redis://file.test:6379/1\n"
+                "STATS_SERVER_URL=http://stats.file.test\n"
                 "LOG_LEVEL=WARNING\n",
                 encoding="utf-8",
             )
@@ -120,4 +154,5 @@ class TestIntakeConfig:
             assert settings.buffer_type is BufferTypes.REDIS
             assert settings.buffer_capacity == 5
             assert settings.redis_url == "redis://file.test:6379/1"
+            assert settings.stats_server_url == "http://stats.file.test"
             assert settings.log_level is LogLevel.WARNING
