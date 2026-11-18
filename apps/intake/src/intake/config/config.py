@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     redis_url: str | None = None
     stats_server_url:str
     log_level: LogLevel = LogLevel.INFO
+    uvicorn_host: str = '0.0.0.0'
+    uvicorn_port: int = Field(default=8000, ge=1, le=65535)
 
     @model_validator(mode='after')
     def check_redis_link(self):

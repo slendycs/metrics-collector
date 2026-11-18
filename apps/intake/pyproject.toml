@@ -1,6 +1,7 @@
 [project]
 name = "intake"
 version = "0.1.0"
+description = "A metrics reception service for Metrics Collector"
 authors = [
     { name = "Artem Shevchenko", email = "slendycs@yandex.ru" }
 ]
@@ -16,8 +17,6 @@ dependencies = [
     "httpx>=0.28.1",
 ]
 
-[project.scripts]
-intake = "intake.main:app"
 
 [build-system]
 requires = ["uv_build>=0.12.21,<0.13.0"]

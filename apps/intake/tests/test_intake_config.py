@@ -31,6 +31,61 @@ class TestIntakeConfig:
             assert settings.log_level is LogLevel.INFO
 
     @pytest.mark.unit
+    @allure.title("Параметры uvicorn имеют значения по умолчанию [UNIT]")
+    def test_uvicorn_defaults(self):
+        with allure.step("Создать настройки без явных параметров uvicorn"):
+            settings = _make_settings()
+
+        with allure.step("Проверить хост 0.0.0.0 и порт 8000"):
+            assert settings.uvicorn_host == "0.0.0.0"
+            assert settings.uvicorn_port == 8000
+
+    @pytest.mark.unit
+    @allure.title("Параметры uvicorn читаются из переменных окружения [UNIT]")
+    def test_reads_uvicorn_values_from_environment(self, monkeypatch):
+        with allure.step("Задать UVICORN_HOST и UVICORN_PORT в окружении"):
+            monkeypatch.setenv("UVICORN_HOST", "127.0.0.5")
+            monkeypatch.setenv("UVICORN_PORT", "8124")
+
+        with allure.step("Создать настройки без .env файла"):
+            settings = Settings(_env_file=None)  # type: ignore
+
+        with allure.step("Проверить хост и порт из окружения"):
+            assert settings.uvicorn_host == "127.0.0.5"
+            assert settings.uvicorn_port == 8124
+
+    @pytest.mark.unit
+    @allure.title("Настройки принимают граничный порт uvicorn {port} [UNIT]")
+    @pytest.mark.parametrize(
+        "port",
+        [
+            pytest.param(1, id="min"),
+            pytest.param(65535, id="max"),
+        ],
+    )
+    def test_accepts_boundary_uvicorn_port(self, port):
+        with allure.step(f"Создать настройки с портом {port}"):
+            settings = _make_settings(uvicorn_port=port)
+
+        with allure.step("Проверить сохранённый порт"):
+            assert settings.uvicorn_port == port
+
+    @pytest.mark.unit
+    @allure.title("Настройки отклоняют недопустимый порт uvicorn {port} [UNIT]")
+    @pytest.mark.parametrize(
+        "port",
+        [
+            pytest.param(0, id="zero"),
+            pytest.param(-1, id="negative"),
+            pytest.param(65536, id="too-large"),
+        ],
+    )
+    def test_rejects_invalid_uvicorn_port(self, port):
+        with allure.step(f"Попытаться создать настройки с портом {port}"):
+            with pytest.raises(ValidationError):
+                _make_settings(uvicorn_port=port)
+
+    @pytest.mark.unit
     @allure.title("Настройки принимают корректную ёмкость буфера [UNIT]")
     def test_accepts_valid_capacity(self):
         with allure.step("Создать настройки с ёмкостью 10"):

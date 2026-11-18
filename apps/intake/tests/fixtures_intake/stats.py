@@ -3,7 +3,7 @@ from datetime import datetime
 import httpx
 import pytest
 
-from buffer import Buffer
+from buffer import Buffer, BufferException
 from models import PutResult, ServerStatsDTO, ServerTypes
 from models.metrics import MetricsDTO
 
@@ -45,6 +45,7 @@ class StubBuffer(Buffer):
         self,
         result: PutResult | None = None,
         error: Exception | None = None,
+        ping_error: BufferException | None = None,
     ) -> None:
         self._result = (
             result
@@ -59,6 +60,7 @@ class StubBuffer(Buffer):
             )
         )
         self.error = error
+        self.ping_error = ping_error
         self.calls: list[tuple] = []
 
     async def put(self, bid, seq: int) -> PutResult:
@@ -68,6 +70,8 @@ class StubBuffer(Buffer):
         return self._result
 
     async def ping(self) -> None:
+        if self.ping_error is not None:
+            raise self.ping_error
         return None
 
     async def aclose(self) -> None:
@@ -76,13 +80,14 @@ class StubBuffer(Buffer):
 
 @pytest.fixture
 def buffer_stub_factory():
-    """Создаёт заглушку Buffer с заданным результатом или ошибкой put."""
+    """Создаёт заглушку Buffer с заданным результатом или ошибкой put/ping."""
 
     def factory(
         result: PutResult | None = None,
         error: Exception | None = None,
+        ping_error: BufferException | None = None,
     ) -> StubBuffer:
-        return StubBuffer(result=result, error=error)
+        return StubBuffer(result=result, error=error, ping_error=ping_error)
 
     return factory
 

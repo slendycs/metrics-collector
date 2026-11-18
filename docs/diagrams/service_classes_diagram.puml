@@ -33,29 +33,57 @@ package "Common (libs/models)" {
     +accepted: bool
     +bid_id: int
     +seq: int
+    +source_name: str
+    +source_type: ServerTypes
     +slot: Optional<int>
   }
   class TakeResult <<dataclass>> {
     +bid: Bid
     +slot: int
   }
-  class MetricsDTO <<BaseModel>> { +to_obj(): Metrics }
-  class ServerStatsDTO <<BaseModel>> { +to_obj(): ServerStats }
+  class MetricsDTO <<BaseModel>> {
+    +cpu_load: float
+    +ram_load: float
+    +disk_read: int
+    +disk_write: int
+    +load_average: list<float>
+    +timestamp: datetime
+    +to_obj(): Metrics
+  }
+  class ServerStatsDTO <<BaseModel>> {
+    +server_name: str
+    +server_type: ServerTypes
+    +seq: int
+    +metrics: MetricsDTO
+    +to_obj(): ServerStats
+  }
   class BidDTO <<BaseModel>> {
-    +id: Optional<int>
+    +source_name: str
+    +source_type: ServerTypes
+    +time_in: datetime
+    +stats: MetricsDTO
     +to_obj(bid_id: Optional<int>): Bid
   }
-  class PutResultDTO <<BaseModel>>
+  class PutResultDTO <<BaseModel>> {
+    +accepted: bool
+    +bid_id: int
+    +seq: int
+    +source_name: str
+    +source_type: ServerTypes
+    +slot: Optional<int>
+  }
   ServerStats *-- Metrics
   ServerStats --> ServerTypes
   Bid *-- Metrics
   Bid --> ServerTypes
+  PutResult --> ServerTypes
   TakeResult o-- Bid
   ServerStatsDTO *-- MetricsDTO
   BidDTO *-- MetricsDTO
   ServerStatsDTO ..> ServerStats : <<create>>
   BidDTO ..> Bid : <<create>>
   MetricsDTO ..> Metrics : <<create>>
+  PutResultDTO ..> PutResult : <<from_attributes>>
 }
 
 package "Agent" {
@@ -86,11 +114,12 @@ package "Agent" {
 package "BufferLib (libs/buffer)" {
   abstract class Buffer {
     {abstract} +put(bid: Bid, seq: int): PutResult
+    {abstract} +ping(): None
+    {abstract} +aclose(): None
+    ..планируется для ДВ (ещё не реализовано в libs/buffer)..
     {abstract} +pull(): Optional<TakeResult>
     {abstract} +requeue(bid: Bid): bool
     {abstract} +subscribe(callback): None
-    {abstract} +ping(): None
-    {abstract} +aclose(): None
   }
   class RedisBuffer {
     -_redis: Redis
@@ -102,6 +131,9 @@ package "BufferLib (libs/buffer)" {
     -_return_script: Script
     -_take_next_script: Script
     +__init__(redis_client: Redis, capacity: int)
+    +put(bid: Bid, seq: int): PutResult
+    +ping(): None
+    +aclose(): None
     -_load_script(name: str): str
     -_register_scripts(redis_client: Redis): tuple
   }
@@ -111,13 +143,14 @@ package "BufferLib (libs/buffer)" {
   class BufferResponseError
   class RedisServer <<Redis + Lua>> {
     buffer:slots, buffer:bid_id
-    put_bid (Д1ОЗ3, Д1ОО5)
+    put_bid (Д1ОЗ3, Д1ОО5, PUBLISH при accepted)
     take_next (Д2Б4)
     return_bid
     buffer_updated (Pub/Sub)
   }
   Buffer <|.. RedisBuffer
   RedisBuffer ..> RedisServer : EVALSHA, SUBSCRIBE
+  RedisBuffer ..> BidDTO : model_validate(bid)
   RedisBuffer ..> BufferException : <<throws>>
   BufferException <|-- BufferTimeoutError
   BufferException <|-- BufferConnectionError
@@ -127,7 +160,7 @@ package "BufferLib (libs/buffer)" {
 }
 
 package "ReceptionService (apps/intake)" {
-  class ReceptionSettings <<BaseSettings>> {
+  class "Settings" as ReceptionSettings <<BaseSettings>> {
     +buffer_type: BufferTypes
     +buffer_capacity: int
     +redis_url: Optional<str>
@@ -135,25 +168,27 @@ package "ReceptionService (apps/intake)" {
     +log_level: LogLevel
     +check_redis_link(): Self
   }
-  class ReceptionApp <<FastAPI>> {
+  class "FastAPI app\n(main.py, routes)" as ReceptionApp <<FastAPI>> {
     +lifespan(app): None
-    +collect_metrics(stats: ServerStatsDTO, buffer: Buffer, stats_client: ReceptionStatsClient): PutResultDTO
+    +collect_metrics(stats: ServerStatsDTO, buffer: Buffer): PutResultDTO
+    +health(): int
     +create_buffer(): Buffer
     +get_buffer(request): Buffer
   }
-  class ReceptionStatsClient {
-    -_stats_server_url: str
-    -_NEW_WEBHOOK_ENDPOINT: str
-    -_REJECTED_WEBHOOK_ENDPOINT: str
-    +notify(notification_type: str, bid: Bid, result: PutResult): None
+  class "StatsClient" as ReceptionStatsClient {
+    -_STATS_ENDPOINT: str
+    +notify(post_result: PutResult): None
   }
-  ReceptionSettings ..> ReceptionApp
-  ReceptionApp ..> Buffer : Depends(get_buffer)
+  ReceptionSettings ..> ReceptionApp : buffer_type, buffer_capacity, redis_url
+  ReceptionSettings ..> ReceptionStatsClient : stats_server_url
+  ReceptionApp --> Buffer : app.state.buffer\n(lifespan: create_buffer, ping, aclose)
   ReceptionApp ..> RedisBuffer : <<create>> (DI)
-  ReceptionApp ..> ReceptionStatsClient : Depends(get_stats)
+  ReceptionApp ..> ServerStatsDTO : тело POST /collect
   ReceptionApp ..> Bid : <<create>>
-  ReceptionApp ..> PutResultDTO
+  ReceptionApp ..> PutResultDTO : ответ 201
+  ReceptionApp ..> ReceptionStatsClient : <<create>> на каждый запрос,\nнотификация после put
   ReceptionStatsClient ..> PutResult
+  ReceptionStatsClient ..> PutResultDTO : model_validate
 }
 
 package "WorkerDispatcher" {
@@ -256,7 +291,7 @@ package "WorkerService" {
 package "StatisticsService" {
   class StatsSettings <<BaseSettings>> { +confidence_t: float\n+rel_precision: float }
   class StatsApp <<FastAPI>> {
-    +on_new(event: NewEvent, c: StatsCollector): None
+    +on_put(result: PutResultDTO, c: StatsCollector): None
     +on_reject(event: RejectEvent, c: StatsCollector): None
     +on_task_status(event: TaskStatusEvent, c: StatsCollector): None
     +summary(c: StatsCollector): Summary
@@ -272,7 +307,7 @@ package "StatisticsService" {
     -_precision: PrecisionChecker
     -_t_start: datetime
     -_t_end: datetime
-    +on_new(event: NewEvent): None
+    +on_put(result: PutResultDTO): None
     +on_reject(event: RejectEvent): None
     +on_taken(event: TaskStatusEvent): None
     +on_done(event: TaskStatusEvent): None
@@ -299,7 +334,6 @@ package "StatisticsService" {
   class RunningStat { -_n: int\n-_mean: float\n-_m2: float\n+add(x: float): None\n+mean(): float\n+variance(): float }
   class EventLog { -_events: list<TimelineEvent>\n+append(ev: TimelineEvent): None\n+all(): list<TimelineEvent>\n+clear(): None }
   class PrecisionChecker { -_t: float\n-_delta: float\n+required_n(p_reject: float): int\n+check(generated: int, p_reject: float): PrecisionReport }
-  class NewEvent <<BaseModel>> { +bid: BidDTO\n+seq: int\n+slot: Optional<int> }
   class RejectEvent <<BaseModel>> { +bid: BidDTO\n+seq: Optional<int> }
   class TaskStatusEvent <<BaseModel>> { +bid: BidDTO\n+status: str\n+worker_id: int\n+slot: Optional<int>\n+duration: float\n+at: datetime }
   class TimelineEvent <<dataclass>> { +at: datetime\n+kind: str\n+source_name: str\n+source_type: str\n+bid_id: int\n+seq: int\n+slot: Optional<int>\n+worker_id: Optional<int> }
@@ -309,7 +343,7 @@ package "StatisticsService" {
   class PrecisionReport <<dataclass>> { +required_n: int\n+generated: int\n+reached: bool }
   StatsSettings ..> PrecisionChecker
   StatsApp ..> StatsCollector : Depends(get_collector)
-  StatsApp ..> NewEvent
+  StatsApp ..> PutResultDTO : POST /intake/take
   StatsApp ..> RejectEvent
   StatsApp ..> TaskStatusEvent
   StatsCollector o-- "0..*" SourceStats : _sources
@@ -325,10 +359,9 @@ package "StatisticsService" {
   Summary o-- SourceRow
   Summary o-- WorkerRow
   PrecisionChecker ..> PrecisionReport
-  NewEvent --> BidDTO
   RejectEvent --> BidDTO
   TaskStatusEvent --> BidDTO
-  ReceptionStatsClient ..> StatsApp : POST /webhooks/new, /webhooks/reject
+  ReceptionStatsClient ..> StatsApp : POST /intake/take
   DispatcherStatsClient ..> StatsApp : POST /task-status, /webhooks/reject
 }
 

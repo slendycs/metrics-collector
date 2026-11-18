@@ -14,6 +14,16 @@ participant "PagerDuty" as PD
 actor "Оператор" as OP
 
 == Старт ==
+DP -> DP : lifespan(): create_buffer()\nSettings.buffer_type → RedisBuffer(redis_client, buffer_capacity)
+DP -> BUF : ping()
+alt буфер доступен
+  BUF --> DP : OK
+  note over DP : buffer сохраняется в app.state.buffer\n(отдаётся в обработчики через Depends(get_buffer))
+else BufferException (таймаут / нет соединения / ошибка ответа)
+  BUF --> DP : BufferTimeoutError / BufferConnectionError / BufferResponseError
+  note over DP : logger.critical, приложение не стартует
+end
+note over DP : при остановке lifespan вызывает buffer.aclose()
 DV -> BUF : subscribe(on_buffer_updated)
 note over DV : запуск watchdog (раз в watchdog_interval)
 W -> DV : POST /register(worker_id, url, priority)
@@ -25,33 +35,42 @@ DV -> DV : _try_dispatch() (триггер: новый воркер)
 loop пока агент работает
   AG -> AG : collect() → ServerStats\n(server_name, server_type, seq, metrics)
   AG -> DP : POST /collect(ServerStatsDTO)
-  DP -> DP : bid = Bid(source_name, source_type,\ntime_in = now, stats), id пока пуст
+  DP -> DP : ServerStatsDTO.to_obj() → ServerStats;\nbid = Bid(source_name, source_type,\ntime_in = now, stats = metrics), id пока пуст
   DP -> BUF : put(bid, seq)
   note over BUF
-    Lua put_bid (атомарно)
-    INCR buffer:bid_id — глобальный id (выдаётся всегда)
-    seq Redis не считает, его присылает агент
+    BidDTO.model_validate(bid) → JSON-payload, затем Lua put_bid (атомарно)
+    INCR buffer:bid_id — глобальный id (выдаётся всегда, даже при отказе)
+    seq Redis не считает: его присылает агент, он возвращается в PutResult без изменений
     Д1ОЗ3: первое свободное место от начала, без сдвига
     Блокировки в ДП не нужны, работает при нескольких экземплярах ДП
   end note
-  alt есть свободное место (accepted = true)
-    BUF --> DP : PutResult(accepted, slot, bid_id, seq)
-    BUF -> DV : PUBLISH buffer_updated (триггер Б1)
-  else буфер полон — отказ новой заявке (Д1ОО5)
-    BUF --> DP : PutResult(accepted = false, slot = None, bid_id, seq)
-    note over DP,BUF : буфер и заявки в нём не меняются, выбивания нет;\nпакет потерян, следующий придёт по таймеру агента
+  alt ошибка буфера
+    BUF --> DP : BufferTimeoutError / BufferConnectionError /\nBufferResponseError / ValidationError
+    DP --> AG : 504 (таймаут буфера) / 502 (нет соединения) / 500 (прочее)
+    note over DP : заявка не размещена, статистика не уведомляется
+  else буфер ответил
+    alt есть свободное место (accepted = true)
+      BUF --> DP : PutResult(accepted, slot, bid_id, seq, source_name, source_type)
+      BUF -> DV : PUBLISH buffer_updated (триггер Б1, из Lua put_bid)
+    else буфер полон — отказ новой заявке (Д1ОО5)
+      BUF --> DP : PutResult(accepted = false, slot = None, bid_id, seq, ...)
+      note over DP,BUF : буфер и заявки в нём не меняются, выбивания нет, PUBLISH нет;\nпакет потерян, следующий придёт по таймеру агента
+    end
+    DP -> ST : POST /intake/take(PutResultDTO)
+    alt статистика ответила 2xx
+      ST --> DP : 200 OK
+      note over ST
+        generated += 1
+        accepted: mark_start(at) при первой заявке
+        не accepted: rejected += 1, mark_end(at)
+        seq запоминается по bid_id (_seq_by_bid)
+      end note
+    else HTTPError (сеть, не 2xx)
+      note over DP : logger.warning, на ответ агенту не влияет
+    end
+    DP --> AG : 201 Created (PutResultDTO)
   end
-  DP -> DP : bid.id = result.bid_id
-  alt accepted
-    DP ->> ST : POST /webhooks/new(bid, seq, slot)
-    note over ST : mark_start(at) при первой заявке, generated += 1
-  else отказ
-    DP ->> ST : POST /webhooks/new(bid, seq, slot = None)
-    DP ->> ST : POST /webhooks/reject(bid, seq)
-    note over ST : reject += 1, mark_end(at)
-  end
-  DP --> AG : 201 Created (PutResultDTO)
-  opt сетевая ошибка / 5xx (504 таймаут буфера, 502 нет соединения, 500)
+  opt сетевая ошибка / 5xx
     note over AG,DP : Client бросает Exception, PoolingManager пропускает такт
   end
   AG -> AG : sleep(uniform(timeout_min, timeout_max)) (ИЗ2)

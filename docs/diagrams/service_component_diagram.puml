@@ -10,7 +10,7 @@ package "Пул агентов (ИБ, ИЗ2)" {
 }
 
 component "Сервис приёма (ДП)\napps/intake" as DP
-interface "POST /collect" as ICollect
+interface "POST /collect\nGET /health" as ICollect
 
 component "Буфер (Д1ОЗ3, Д1ОО5, Д2Б4)\nlibs/buffer: Buffer ← RedisBuffer" as BUF
 database "Redis + Lua\nput_bid / take_next / return_bid\nPub/Sub buffer_updated" as REDIS
@@ -26,7 +26,7 @@ package "Пул воркеров (П31, ПЗ1)" {
 interface "POST /process" as IProc
 
 component "Сервис статистики (ОР1, ОД3)" as ST
-interface "POST /webhooks/new\nPOST /webhooks/reject\nPOST /task-status" as IStat
+interface "POST /intake/take\nPOST /webhooks/reject\nPOST /task-status" as IStat
 interface "GET /summary\nGET /precision\nGET /timeline" as IRep
 
 database "БД временных рядов" as TSDB
@@ -38,7 +38,7 @@ A2 -( ICollect
 A3 -( ICollect
 ICollect - DP
 
-DP ..> BUF : <<use>> put(bid, seq)\n(DI: Buffer)
+DP ..> BUF : <<use>> put(bid, seq), ping()\n(DI: Buffer)
 BUF ..> REDIS : EVALSHA, PUBLISH
 DV ..> BUF : <<use>> pull / requeue / subscribe\n(DI: Buffer)
 BUF ..> DV : <<callback>> on_buffer_updated
@@ -60,7 +60,7 @@ W1 ..> PD : create_incident
 W2 ..> PD : create_incident
 W3 ..> PD : create_incident
 
-DP -( IStat
+DP -( IStat : PutResultDTO\n(accepted, bid_id, seq, slot)
 DV -( IStat
 IStat - ST
 ST - IRep
@@ -70,5 +70,6 @@ note bottom of BUF
   Буфер подключается через DI:
   Settings.buffer_type → create_buffer()
   → RedisBuffer(redis_client, capacity)
+  (создаётся в lifespan, ping() при старте)
 end note
 @enduml
